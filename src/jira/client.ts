@@ -35,10 +35,31 @@ export class JiraClient {
   private client: AxiosInstance;
 
   constructor(config: JiraConfig) {
+    // Validate and normalize the base URL
+    let baseUrl = config.baseUrl?.trim();
+    if (!baseUrl) {
+      throw new Error('Jira baseUrl is required');
+    }
+    
+    // Ensure the URL has a protocol
+    if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+      baseUrl = `https://${baseUrl}`;
+    }
+    
+    // Remove trailing slash if present
+    baseUrl = baseUrl.replace(/\/+$/, '');
+    
+    // Validate the URL format
+    try {
+      new URL(baseUrl);
+    } catch {
+      throw new Error(`Invalid Jira base URL: "${config.baseUrl}". Expected format: https://your-domain.atlassian.net`);
+    }
+    
     const auth = Buffer.from(`${config.email}:${config.apiToken}`).toString('base64');
     
     this.client = axios.create({
-      baseURL: `${config.baseUrl}/rest/api/3`,
+      baseURL: `${baseUrl}/rest/api/3`,
       headers: {
         'Authorization': `Basic ${auth}`,
         'Accept': 'application/json',
