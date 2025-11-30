@@ -33,12 +33,32 @@ export interface JiraTicketContent {
 
 export class JiraClient {
   private client: AxiosInstance;
+  private baseUrl: string;
 
   constructor(config: JiraConfig) {
+    // Validate the base URL before using it
+    let baseUrl = config.baseUrl?.trim() || '';
+    
+    // Auto-add https:// if missing
+    if (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+      baseUrl = `https://${baseUrl}`;
+    }
+    
+    // Remove trailing slash
+    baseUrl = baseUrl.replace(/\/+$/, '');
+    
+    // Validate URL format
+    try {
+      new URL(baseUrl);
+    } catch (e) {
+      throw new Error(`Invalid Jira base URL: "${config.baseUrl}". Expected format: https://your-domain.atlassian.net`);
+    }
+    
+    this.baseUrl = baseUrl;
     const auth = Buffer.from(`${config.email}:${config.apiToken}`).toString('base64');
     
     this.client = axios.create({
-      baseURL: `${config.baseUrl}/rest/api/3`,
+      baseURL: `${baseUrl}/rest/api/3`,
       headers: {
         'Authorization': `Basic ${auth}`,
         'Accept': 'application/json',

@@ -119,6 +119,9 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
     throw new Error('Jira credentials are required for detect mode');
   }
 
+  // Debug: Log Jira base URL length to help diagnose without exposing secrets
+  core.info(`Jira base URL length: ${config.jiraBaseUrl.length}, starts with https: ${config.jiraBaseUrl.startsWith('https://')}`);
+
   const jiraClient = new JiraClient({
     baseUrl: config.jiraBaseUrl,
     email: config.jiraEmail,
