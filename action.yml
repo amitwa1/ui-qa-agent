@@ -33,9 +33,9 @@ inputs:
     required: false
     default: 'us-east-1'
   bedrock-model-id:
-    description: 'Bedrock model ID (default: global.anthropic.claude-sonnet-4-20250514-v1:0)'
+    description: 'Bedrock model ID (default: us.anthropic.claude-sonnet-4-20250514-v1:0)'
     required: false
-    default: 'global.anthropic.claude-sonnet-4-20250514-v1:0'
+    default: 'us.anthropic.claude-sonnet-4-20250514-v1:0'
   aws-access-key-id:
     description: 'AWS access key ID for Bedrock (legacy auth)'
     required: false

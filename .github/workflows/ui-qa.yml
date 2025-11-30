@@ -5,6 +5,21 @@ on:
     types: [opened, synchronize, reopened]
   issue_comment:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Test mode to run'
+        required: true
+        default: 'detect'
+        type: choice
+        options:
+          - detect
+          - request
+          - analyze
+      pr_number:
+        description: 'PR number to test against'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -78,6 +93,19 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           figma-links: ${{ needs.detect-design-links.outputs.figma_links }}
 
+  # Debug job to see what's in the event
+  debug-event:
+    name: Debug Event
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issue_comment'
+    steps:
+      - name: Debug event payload
+        run: |
+          echo "Event name: ${{ github.event_name }}"
+          echo "Is PR: ${{ github.event.issue.pull_request != '' }}"
+          echo "Comment body: ${{ github.event.comment.body }}"
+          echo "Contains qa!: ${{ contains(github.event.comment.body, 'qa!') }}"
+
   # Job 3: Analyze screenshots when posted in comments
   analyze-screenshots:
     name: Analyze Screenshots
@@ -85,7 +113,7 @@ jobs:
     if: |
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '![')
+      contains(github.event.comment.body, 'qa!')
     steps:
       - name: Checkout
         uses: actions/checkout@v4

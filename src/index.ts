@@ -40,7 +40,7 @@ function getConfig(): ActionConfig {
     // Bedrock API Key auth (recommended)
     bedrockApiKey: core.getInput('bedrock-api-key'),
     bedrockRegion: core.getInput('bedrock-region') || 'us-east-1',
-    bedrockModelId: core.getInput('bedrock-model-id') || 'global.anthropic.claude-sonnet-4-20250514-v1:0',
+    bedrockModelId: core.getInput('bedrock-model-id') || 'us.anthropic.claude-sonnet-4-20250514-v1:0',
     // Legacy AWS credentials auth
     awsAccessKeyId: core.getInput('aws-access-key-id'),
     awsSecretAccessKey: core.getInput('aws-secret-access-key'),
@@ -85,14 +85,21 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
   const prBody = context.payload.pull_request.body || '';
 
   core.info(`Analyzing PR #${pullNumber} for Jira/Figma links...`);
+  core.info(`PR Body length: ${prBody.length} characters`);
+  core.info(`PR Body preview: ${prBody.substring(0, 500)}...`);
 
   const prHandler = new PRHandler(config.githubToken, owner, repo);
 
   // Find Jira URLs in PR description
   const jiraUrls = JiraClient.findJiraUrls(prBody);
   
+  core.info(`Raw Jira URLs found: ${JSON.stringify(jiraUrls)}`);
+  
   if (jiraUrls.length === 0) {
     core.info('No Jira URLs found in PR description');
+    core.info('Looking for atlassian.net in body...');
+    core.info(`Contains "atlassian.net": ${prBody.includes('atlassian.net')}`);
+    core.info(`Contains "jira": ${prBody.toLowerCase().includes('jira')}`);
     core.setOutput('has_figma_links', 'false');
     core.setOutput('figma_links', '[]');
     core.setOutput('jira_ticket', '');
@@ -100,6 +107,12 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
   }
 
   core.info(`Found ${jiraUrls.length} Jira URL(s): ${jiraUrls.join(', ')}`);
+  
+  // Log extracted issue keys
+  for (const url of jiraUrls) {
+    const key = JiraClient.extractIssueKeyFromUrl(url);
+    core.info(`URL: ${url} -> Issue Key: ${key || 'NOT FOUND'}`);
+  }
 
   // Initialize clients
   if (!config.jiraBaseUrl || !config.jiraEmail || !config.jiraApiToken) {
@@ -115,7 +128,7 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
   const bedrockClient = new BedrockClient({
     apiKey: config.bedrockApiKey,
     region: config.bedrockRegion || 'us-east-1',
-    profileId: config.bedrockModelId,
+    modelId: config.bedrockModelId,
     accessKeyId: config.awsAccessKeyId,
     secretAccessKey: config.awsSecretAccessKey,
   });
@@ -137,6 +150,9 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
     try {
       const ticketContent = await jiraClient.getTicketContent(issueKey);
       core.info(`Ticket content length: ${ticketContent.fullText.length} chars`);
+      core.info(`=== JIRA TICKET CONTENT START ===`);
+      core.info(ticketContent.fullText);
+      core.info(`=== JIRA TICKET CONTENT END ===`);
 
       // Use LLM to extract Figma links
       core.info('Using LLM to extract Figma links...');
@@ -243,7 +259,7 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
   const bedrockClient = new BedrockClient({
     apiKey: config.bedrockApiKey,
     region: config.bedrockRegion || 'us-east-1',
-    profileId: config.bedrockModelId,
+    modelId: config.bedrockModelId,
     accessKeyId: config.awsAccessKeyId,
     secretAccessKey: config.awsSecretAccessKey,
   });
@@ -260,6 +276,9 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
 
     try {
       const ticketContent = await jiraClient.getTicketContent(issueKey);
+      core.info(`=== JIRA TICKET CONTENT START (${issueKey}) ===`);
+      core.info(ticketContent.fullText);
+      core.info(`=== JIRA TICKET CONTENT END ===`);
       const extractionResult = await bedrockClient.extractFigmaLinks(ticketContent.fullText);
       
       for (const link of extractionResult.figmaLinks) {
@@ -415,6 +434,6 @@ async function run(): Promise<void> {
     }
   }
 }
-
+//
 run();
 
