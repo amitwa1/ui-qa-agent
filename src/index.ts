@@ -119,8 +119,6 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
     throw new Error('Jira credentials are required for detect mode');
   }
 
-  core.info(`Jira base URL configured: ${config.jiraBaseUrl ? config.jiraBaseUrl.substring(0, 30) + '...' : 'NOT SET'}`);
-
   const jiraClient = new JiraClient({
     baseUrl: config.jiraBaseUrl,
     email: config.jiraEmail,
@@ -430,5 +428,6 @@ async function run(): Promise<void> {
     }
   }
 }
+//
 run();
 
