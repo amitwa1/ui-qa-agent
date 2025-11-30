@@ -15,11 +15,10 @@ interface ActionConfig {
   jiraEmail?: string;
   jiraApiToken?: string;
   figmaAccessToken?: string;
-  // Bedrock API Key auth (recommended)
-  bedrockApiKey?: string;
+  // Bedrock configuration
   bedrockRegion?: string;
   bedrockModelId?: string;
-  // Legacy AWS credentials auth
+  // AWS credentials for Bedrock authentication
   awsAccessKeyId?: string;
   awsSecretAccessKey?: string;
   prNumber?: number;
@@ -37,11 +36,10 @@ function getConfig(): ActionConfig {
     jiraEmail: core.getInput('jira-email'),
     jiraApiToken: core.getInput('jira-api-token'),
     figmaAccessToken: core.getInput('figma-access-token'),
-    // Bedrock API Key auth (recommended)
-    bedrockApiKey: core.getInput('bedrock-api-key'),
+    // Bedrock configuration
     bedrockRegion: core.getInput('bedrock-region') || 'us-east-1',
-    bedrockModelId: core.getInput('bedrock-model-id') || 'global.anthropic.claude-sonnet-4-20250514-v1:0',
-    // Legacy AWS credentials auth
+    bedrockModelId: core.getInput('bedrock-model-id') || 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    // AWS credentials for Bedrock authentication
     awsAccessKeyId: core.getInput('aws-access-key-id'),
     awsSecretAccessKey: core.getInput('aws-secret-access-key'),
   };
@@ -129,9 +127,8 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
   });
 
   const bedrockClient = new BedrockClient({
-    apiKey: config.bedrockApiKey,
     region: config.bedrockRegion || 'us-east-1',
-    profileId: config.bedrockModelId,
+    modelId: config.bedrockModelId,
     accessKeyId: config.awsAccessKeyId,
     secretAccessKey: config.awsSecretAccessKey,
   });
@@ -143,8 +140,7 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
   for (const jiraUrl of jiraUrls) {
     const issueKey = JiraClient.extractIssueKeyFromUrl(jiraUrl);
     if (!issueKey) {
-      core.warning(`Could not extract issue key from: ${jiraUrl}`);
-      continue;
+      throw new Error(`Could not extract issue key from: ${jiraUrl}`);
     }
 
     jiraTicketKey = issueKey;
@@ -169,7 +165,7 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
         }
       }
     } catch (error) {
-      core.warning(`Error processing Jira ticket ${issueKey}: ${error}`);
+      throw new Error(`Error processing Jira ticket ${issueKey}: ${error}`);
     }
   }
 
@@ -257,9 +253,8 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
     accessToken: config.figmaAccessToken,
   });
   const bedrockClient = new BedrockClient({
-    apiKey: config.bedrockApiKey,
     region: config.bedrockRegion || 'us-east-1',
-    profileId: config.bedrockModelId,
+    modelId: config.bedrockModelId,
     accessKeyId: config.awsAccessKeyId,
     secretAccessKey: config.awsSecretAccessKey,
   });
@@ -284,7 +279,7 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
         }
       }
     } catch (error) {
-      core.warning(`Error fetching Jira ticket: ${error}`);
+      throw new Error(`Error fetching Jira ticket: ${error}`);
     }
   }
 
@@ -332,13 +327,12 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
         });
       }
     } catch (error) {
-      core.warning(`Error fetching Figma images from ${figmaUrl}: ${error}`);
+      throw new Error(`Error fetching Figma images from ${figmaUrl}: ${error}`);
     }
   }
 
   if (figmaImages.length === 0) {
-    core.warning('Could not fetch any Figma images');
-    return;
+    throw new Error('Could not fetch any Figma images');
   }
 
   // Compare each screenshot against Figma designs
