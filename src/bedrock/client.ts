@@ -1,12 +1,17 @@
-import {
-  BedrockRuntimeClient,
-  InvokeModelCommand,
-} from '@aws-sdk/client-bedrock-runtime';
+/**
+ * AWS Bedrock client for LLM operations
+ */
+
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 
 export interface BedrockConfig {
+  // API Key authentication (July 2025 feature)
+  apiKey?: string;
   region: string;
   modelId?: string;
-  // AWS credentials (required for SigV4 authentication)
+  anthropicVersion?: string;
+  
+  // Legacy AWS credentials authentication
   accessKeyId?: string;
   secretAccessKey?: string;
 }
@@ -35,23 +40,48 @@ export interface UIComparisonResult {
 export class BedrockClient {
   private client: BedrockRuntimeClient;
   private modelId: string;
+  private anthropicVersion: string;
 
   constructor(config: BedrockConfig) {
-    this.modelId = config.modelId || 'anthropic.claude-3-5-sonnet-20241022-v2:0';
+    this.modelId = config.modelId || 'us.anthropic.claude-sonnet-4-20250514-v1:0';
+    this.anthropicVersion = config.anthropicVersion || 'bedrock-2023-05-31';
+
+    // Validate region
+    if (!config.region) {
+      throw new Error('AWS Bedrock region is required');
+    }
+
+    // Initialize client config
+    const clientConfig: Record<string, unknown> = { region: config.region };
+
+    // Priority: API Key > Access Keys > Default credential chain
+    if (config.apiKey) {
+      console.log('Using AWS Bedrock API Key for authentication (July 2025 feature)');
+      // Set the API key as AWS_BEARER_TOKEN_BEDROCK environment variable
+      // This is the correct way to use Bedrock API keys according to AWS documentation
+      process.env.AWS_BEARER_TOKEN_BEDROCK = config.apiKey;
+      console.log('Set AWS_BEARER_TOKEN_BEDROCK environment variable for Bedrock authentication');
+      // Don't set any credentials - let AWS SDK use the bearer token
+    } else if (config.accessKeyId && config.secretAccessKey) {
+      console.log('Using explicit AWS Access Key credentials for Bedrock');
+      clientConfig.credentials = {
+        accessKeyId: config.accessKeyId,
+        secretAccessKey: config.secretAccessKey,
+      };
+    } else {
+      console.log('Using default AWS credential chain for Bedrock');
+    }
 
     // Debug logging (safe - doesn't expose secrets)
-    console.log(`Bedrock config: region=${config.region}, model=${this.modelId}, hasCredentials=${!!(config.accessKeyId && config.secretAccessKey)}`);
+    console.log(`Bedrock config: region=${config.region}, model=${this.modelId}, hasApiKey=${!!config.apiKey}, hasCredentials=${!!(config.accessKeyId && config.secretAccessKey)}`);
 
-    // Create Bedrock client with AWS credentials
-    this.client = new BedrockRuntimeClient({
-      region: config.region,
-      ...(config.accessKeyId && config.secretAccessKey && {
-        credentials: {
-          accessKeyId: config.accessKeyId,
-          secretAccessKey: config.secretAccessKey,
-        },
-      }),
-    });
+    try {
+      this.client = new BedrockRuntimeClient(clientConfig);
+      console.log(`Bedrock client initialized for region: ${config.region}, model: ${this.modelId}`);
+    } catch (error) {
+      console.error('Failed to initialize Bedrock client:', error);
+      throw new Error(`Failed to initialize Bedrock client: ${error}`);
+    }
   }
 
   /**
@@ -197,44 +227,54 @@ Guidelines:
    * Invoke the model with text-only prompt
    */
   private async invokeModel(prompt: string): Promise<string> {
-    const body = {
-      anthropic_version: 'bedrock-2023-05-31',
-      max_tokens: 4096,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    };
-
     try {
+      const body = {
+        anthropic_version: this.anthropicVersion,
+        max_tokens: 4096,
+        messages: [
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+      };
+
       const command = new InvokeModelCommand({
         modelId: this.modelId,
-        contentType: 'application/json',
-        accept: 'application/json',
         body: JSON.stringify(body),
+        contentType: 'application/json',
       });
 
       const response = await this.client.send(command);
       const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-      
-      return responseBody.content[0].text;
+
+      return responseBody.content?.[0]?.text || '';
     } catch (error: any) {
-      const errorName = error.name || error.constructor?.name;
-      const errorMessage = error.message || String(error);
-      
-      if (errorName === 'AccessDeniedException' || errorMessage.includes('403')) {
+      console.error('Bedrock API error:', error);
+
+      // Provide specific error messages for common issues
+      if (error?.name === 'UnrecognizedClientException') {
         throw new Error(
-          `Bedrock API access denied. Check that:\n` +
-          `1. AWS credentials have bedrock:InvokeModel permission\n` +
-          `2. Model "${this.modelId}" is enabled in your AWS account\n` +
-          `3. Region is correct\n` +
-          `Details: ${errorMessage}`
+          `AWS Bedrock authentication failed: ${error.message}. ` +
+          `Check your BEDROCK_API_KEY or AWS credentials.`
         );
       }
-      
-      throw new Error(`Bedrock API error: ${errorMessage}`);
+
+      if (error?.name === 'AccessDeniedException') {
+        throw new Error(
+          `AWS Bedrock access denied: ${error.message}. ` +
+          `Check IAM permissions for bedrock:InvokeModel and model access for ${this.modelId}`
+        );
+      }
+
+      if (error?.name === 'ValidationException') {
+        throw new Error(
+          `AWS Bedrock validation error: ${error.message}. ` +
+          `Check model ID and request parameters for ${this.modelId}`
+        );
+      }
+
+      throw new Error(`Bedrock API error: ${error?.message || error}`);
     }
   }
 
@@ -265,32 +305,31 @@ Guidelines:
       text: prompt,
     });
 
-    const body = {
-      anthropic_version: 'bedrock-2023-05-31',
-      max_tokens: 4096,
-      messages: [
-        {
-          role: 'user',
-          content,
-        },
-      ],
-    };
-
     try {
+      const body = {
+        anthropic_version: this.anthropicVersion,
+        max_tokens: 4096,
+        messages: [
+          {
+            role: 'user',
+            content,
+          },
+        ],
+      };
+
       const command = new InvokeModelCommand({
         modelId: this.modelId,
-        contentType: 'application/json',
-        accept: 'application/json',
         body: JSON.stringify(body),
+        contentType: 'application/json',
       });
 
       const response = await this.client.send(command);
       const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-      
-      return responseBody.content[0].text;
+
+      return responseBody.content?.[0]?.text || '';
     } catch (error: any) {
-      const errorMessage = error.message || String(error);
-      throw new Error(`Bedrock API error (vision): ${errorMessage}`);
+      console.error('Bedrock API error (vision):', error);
+      throw new Error(`Bedrock API error (vision): ${error?.message || error}`);
     }
   }
 }

@@ -15,10 +15,11 @@ interface ActionConfig {
   jiraEmail?: string;
   jiraApiToken?: string;
   figmaAccessToken?: string;
-  // Bedrock configuration
+  // Bedrock API Key auth (recommended)
+  bedrockApiKey?: string;
   bedrockRegion?: string;
   bedrockModelId?: string;
-  // AWS credentials for Bedrock authentication
+  // Legacy AWS credentials auth
   awsAccessKeyId?: string;
   awsSecretAccessKey?: string;
   prNumber?: number;
@@ -36,10 +37,11 @@ function getConfig(): ActionConfig {
     jiraEmail: core.getInput('jira-email'),
     jiraApiToken: core.getInput('jira-api-token'),
     figmaAccessToken: core.getInput('figma-access-token'),
-    // Bedrock configuration
+    // Bedrock API Key auth (recommended)
+    bedrockApiKey: core.getInput('bedrock-api-key'),
     bedrockRegion: core.getInput('bedrock-region') || 'us-east-1',
-    bedrockModelId: core.getInput('bedrock-model-id') || 'anthropic.claude-3-5-sonnet-20241022-v2:0',
-    // AWS credentials for Bedrock authentication
+    bedrockModelId: core.getInput('bedrock-model-id') || 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+    // Legacy AWS credentials auth
     awsAccessKeyId: core.getInput('aws-access-key-id'),
     awsSecretAccessKey: core.getInput('aws-secret-access-key'),
   };
@@ -117,9 +119,6 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
     throw new Error('Jira credentials are required for detect mode');
   }
 
-  // Debug: Log Jira base URL length to help diagnose without exposing secrets
-  core.info(`Jira base URL length: ${config.jiraBaseUrl.length}, starts with https: ${config.jiraBaseUrl.startsWith('https://')}`);
-
   const jiraClient = new JiraClient({
     baseUrl: config.jiraBaseUrl,
     email: config.jiraEmail,
@@ -127,6 +126,7 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
   });
 
   const bedrockClient = new BedrockClient({
+    apiKey: config.bedrockApiKey,
     region: config.bedrockRegion || 'us-east-1',
     modelId: config.bedrockModelId,
     accessKeyId: config.awsAccessKeyId,
@@ -140,7 +140,8 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
   for (const jiraUrl of jiraUrls) {
     const issueKey = JiraClient.extractIssueKeyFromUrl(jiraUrl);
     if (!issueKey) {
-      throw new Error(`Could not extract issue key from: ${jiraUrl}`);
+      core.warning(`Could not extract issue key from: ${jiraUrl}`);
+      continue;
     }
 
     jiraTicketKey = issueKey;
@@ -165,7 +166,7 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
         }
       }
     } catch (error) {
-      throw new Error(`Error processing Jira ticket ${issueKey}: ${error}`);
+      core.warning(`Error processing Jira ticket ${issueKey}: ${error}`);
     }
   }
 
@@ -253,6 +254,7 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
     accessToken: config.figmaAccessToken,
   });
   const bedrockClient = new BedrockClient({
+    apiKey: config.bedrockApiKey,
     region: config.bedrockRegion || 'us-east-1',
     modelId: config.bedrockModelId,
     accessKeyId: config.awsAccessKeyId,
@@ -279,7 +281,7 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
         }
       }
     } catch (error) {
-      throw new Error(`Error fetching Jira ticket: ${error}`);
+      core.warning(`Error fetching Jira ticket: ${error}`);
     }
   }
 
@@ -327,12 +329,13 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
         });
       }
     } catch (error) {
-      throw new Error(`Error fetching Figma images from ${figmaUrl}: ${error}`);
+      core.warning(`Error fetching Figma images from ${figmaUrl}: ${error}`);
     }
   }
 
   if (figmaImages.length === 0) {
-    throw new Error('Could not fetch any Figma images');
+    core.warning('Could not fetch any Figma images');
+    return;
   }
 
   // Compare each screenshot against Figma designs

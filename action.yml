@@ -25,19 +25,22 @@ inputs:
   figma-access-token:
     description: 'Figma personal access token'
     required: false
+  bedrock-api-key:
+    description: 'Bedrock API Key for authentication (recommended)'
+    required: false
   bedrock-region:
     description: 'AWS region for Bedrock (default: us-east-1)'
     required: false
     default: 'us-east-1'
   bedrock-model-id:
-    description: 'Bedrock model ID (default: anthropic.claude-3-5-sonnet-20241022-v2:0)'
+    description: 'Bedrock model ID (default: us.anthropic.claude-sonnet-4-20250514-v1:0)'
     required: false
-    default: 'anthropic.claude-3-5-sonnet-20241022-v2:0'
+    default: 'us.anthropic.claude-sonnet-4-20250514-v1:0'
   aws-access-key-id:
-    description: 'AWS access key ID for Bedrock authentication'
+    description: 'AWS access key ID for Bedrock (legacy auth)'
     required: false
   aws-secret-access-key:
-    description: 'AWS secret access key for Bedrock authentication'
+    description: 'AWS secret access key for Bedrock (legacy auth)'
     required: false
   pr-number:
     description: 'Pull request number (for analyze mode)'
