@@ -445,6 +445,7 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
 /**
  * Build a plain text comment for Jira from the comparison results
  */
+//
 function buildJiraComment(
   results: Array<{
     figmaUrl: string;
