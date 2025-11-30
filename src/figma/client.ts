@@ -56,16 +56,26 @@ async function withRetry<T>(
         
         if (attempt < maxRetries) {
           // Calculate delay with exponential backoff
-          const delay = Math.min(
+          let waitTime = Math.min(
             INITIAL_DELAY_MS * Math.pow(2, attempt),
             MAX_DELAY_MS
           );
           
-          // Check for Retry-After header
+          // Check for Retry-After header (could be seconds or HTTP-date)
           const retryAfter = axiosError.response.headers['retry-after'];
-          const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : delay;
+          if (retryAfter) {
+            const retrySeconds = parseInt(retryAfter, 10);
+            // Only use Retry-After if it's a reasonable value (< 120 seconds)
+            if (!isNaN(retrySeconds) && retrySeconds > 0 && retrySeconds < 120) {
+              waitTime = retrySeconds * 1000;
+            }
+            // Otherwise, ignore the header and use our exponential backoff
+          }
           
-          console.log(`[Figma] Rate limited on ${context}. Attempt ${attempt + 1}/${maxRetries + 1}. Waiting ${waitTime}ms before retry...`);
+          // Always cap at MAX_DELAY_MS
+          waitTime = Math.min(waitTime, MAX_DELAY_MS);
+          
+          console.log(`[Figma] Rate limited on ${context}. Attempt ${attempt + 1}/${maxRetries + 1}. Waiting ${waitTime / 1000}s before retry...`);
           await sleep(waitTime);
           continue;
         }
