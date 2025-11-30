@@ -145,6 +145,7 @@ export class JiraClient {
 
   /**
    * Convert Atlassian Document Format (ADF) to plain text
+   * Extracts both text content AND URLs from links
    */
   private adfToText(adf: any): string {
     if (!adf || !adf.content) {
@@ -152,10 +153,46 @@ export class JiraClient {
     }
 
     const extractText = (node: any): string => {
+      // Handle text nodes - check for link marks
       if (node.type === 'text') {
-        return node.text || '';
+        let text = node.text || '';
+        
+        // Check if this text has a link mark - append the URL
+        if (node.marks && Array.isArray(node.marks)) {
+          for (const mark of node.marks) {
+            if (mark.type === 'link' && mark.attrs?.href) {
+              // Append the URL after the text so it's visible
+              text = `${text} (${mark.attrs.href})`;
+            }
+          }
+        }
+        return text;
       }
       
+      // Handle inlineCard (smart links) - these contain URLs
+      if (node.type === 'inlineCard' && node.attrs?.url) {
+        return node.attrs.url + ' ';
+      }
+      
+      // Handle blockCard (embed cards)
+      if (node.type === 'blockCard' && node.attrs?.url) {
+        return node.attrs.url + '\n';
+      }
+      
+      // Handle media nodes (attachments)
+      if (node.type === 'media' && node.attrs) {
+        // Media can have external URLs or be attachments
+        if (node.attrs.url) {
+          return node.attrs.url + ' ';
+        }
+      }
+      
+      // Handle mediaGroup
+      if (node.type === 'mediaGroup' && node.content) {
+        return node.content.map(extractText).join(' ');
+      }
+      
+      // Recursively process content
       if (node.content && Array.isArray(node.content)) {
         return node.content.map(extractText).join('');
       }
@@ -191,6 +228,11 @@ export class JiraClient {
    */
   async getTicketContent(issueKey: string): Promise<JiraTicketContent> {
     const issue = await this.getIssue(issueKey);
+    
+    // Debug: Log raw ADF structure to see what API returns
+    console.log(`=== RAW ADF DESCRIPTION (${issueKey}) ===`);
+    console.log(JSON.stringify(issue.fields.description, null, 2));
+    console.log(`=== END RAW ADF ===`);
     
     const descriptionText = this.adfToText(issue.fields.description);
     const commentsText = (issue.fields.comment?.comments || [])
