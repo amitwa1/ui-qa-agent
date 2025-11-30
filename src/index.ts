@@ -15,6 +15,7 @@ interface ActionConfig {
   jiraEmail?: string;
   jiraApiToken?: string;
   figmaAccessToken?: string;
+  figmaMockMode?: boolean; // Enable mock mode for Figma to skip API calls
   // Bedrock API Key auth (recommended)
   bedrockApiKey?: string;
   bedrockRegion?: string;
@@ -30,6 +31,9 @@ interface ActionConfig {
 function getConfig(): ActionConfig {
   const mode = core.getInput('mode', { required: true }) as ActionMode;
   
+  const figmaMockInput = core.getInput('figma-mock-mode');
+  const figmaMockMode = figmaMockInput === 'true' || figmaMockInput === '1';
+  
   const config: ActionConfig = {
     mode,
     githubToken: core.getInput('github-token', { required: true }),
@@ -37,6 +41,7 @@ function getConfig(): ActionConfig {
     jiraEmail: core.getInput('jira-email'),
     jiraApiToken: core.getInput('jira-api-token'),
     figmaAccessToken: core.getInput('figma-access-token'),
+    figmaMockMode,
     // Bedrock API Key auth (recommended)
     bedrockApiKey: core.getInput('bedrock-api-key'),
     bedrockRegion: core.getInput('bedrock-region') || 'us-east-1',
@@ -255,6 +260,7 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
   });
   const figmaClient = new FigmaClient({
     accessToken: config.figmaAccessToken,
+    useMock: config.figmaMockMode,
   });
   const bedrockClient = new BedrockClient({
     apiKey: config.bedrockApiKey,
@@ -333,8 +339,8 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
   for (let i = 0; i < figmaLinks.length; i++) {
     const figmaUrl = figmaLinks[i];
     
-    // Add delay between requests to avoid rate limiting (except for first request)
-    if (i > 0) {
+    // Add delay between requests to avoid rate limiting (except for first request, skip in mock mode)
+    if (i > 0 && !figmaClient.isMockMode()) {
       core.info(`Waiting 2 seconds before next Figma request to avoid rate limiting...`);
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
@@ -345,7 +351,16 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
       core.info(`Got ${images.length} image(s) from Figma`);
       
       for (const img of images) {
-        const imageBase64 = await downloadImageAsBase64(img.imageUrl);
+        let imageBase64: string;
+        
+        // Handle mock URLs
+        if (img.imageUrl.startsWith('mock://')) {
+          core.info(`🎭 Using mock image for ${img.nodeId}`);
+          imageBase64 = figmaClient.getMockImageBase64();
+        } else {
+          imageBase64 = await downloadImageAsBase64(img.imageUrl);
+        }
+        
         figmaImages.push({
           url: figmaUrl,
           imageBase64,
