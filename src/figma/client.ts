@@ -54,30 +54,44 @@ async function withRetry<T>(
       if (axiosError.response?.status === 429) {
         lastError = error as Error;
         
+        // Extract and log all Figma rate limit headers
+        const headers = axiosError.response.headers;
+        const retryAfter = headers['retry-after'];
+        const planTier = headers['x-figma-plan-tier'];
+        const rateLimitType = headers['x-figma-rate-limit-type'];
+        const upgradeLink = headers['x-figma-upgrade-link'];
+        
+        console.log(`[Figma] ========== RATE LIMIT INFO ==========`);
+        console.log(`[Figma] Context: ${context}`);
+        console.log(`[Figma] Retry-After: ${retryAfter} seconds`);
+        console.log(`[Figma] X-Figma-Plan-Tier: ${planTier}`);
+        console.log(`[Figma] X-Figma-Rate-Limit-Type: ${rateLimitType} (low=Viewer/Collab, high=Full/Dev)`);
+        console.log(`[Figma] X-Figma-Upgrade-Link: ${upgradeLink}`);
+        console.log(`[Figma] ========================================`);
+        
         if (attempt < maxRetries) {
-          // Calculate delay with exponential backoff
-          let waitTime = Math.min(
-            INITIAL_DELAY_MS * Math.pow(2, attempt),
-            MAX_DELAY_MS
-          );
+          // Use Retry-After header if provided and reasonable
+          let waitTime: number;
+          const retrySeconds = parseInt(retryAfter as string, 10);
           
-          // Check for Retry-After header (could be seconds or HTTP-date)
-          const retryAfter = axiosError.response.headers['retry-after'];
-          if (retryAfter) {
-            const retrySeconds = parseInt(retryAfter, 10);
-            // Only use Retry-After if it's a reasonable value (< 120 seconds)
-            if (!isNaN(retrySeconds) && retrySeconds > 0 && retrySeconds < 120) {
-              waitTime = retrySeconds * 1000;
-            }
-            // Otherwise, ignore the header and use our exponential backoff
+          if (!isNaN(retrySeconds) && retrySeconds > 0) {
+            // Use Figma's suggested retry time, but cap at MAX_DELAY_MS
+            waitTime = Math.min(retrySeconds * 1000, MAX_DELAY_MS);
+            console.log(`[Figma] Using Retry-After value: ${retrySeconds}s (capped to ${waitTime / 1000}s)`);
+          } else {
+            // Fallback to exponential backoff
+            waitTime = Math.min(
+              INITIAL_DELAY_MS * Math.pow(2, attempt),
+              MAX_DELAY_MS
+            );
+            console.log(`[Figma] Using exponential backoff: ${waitTime / 1000}s`);
           }
           
-          // Always cap at MAX_DELAY_MS
-          waitTime = Math.min(waitTime, MAX_DELAY_MS);
-          
-          console.log(`[Figma] Rate limited on ${context}. Attempt ${attempt + 1}/${maxRetries + 1}. Waiting ${waitTime / 1000}s before retry...`);
+          console.log(`[Figma] Attempt ${attempt + 1}/${maxRetries + 1}. Waiting ${waitTime / 1000}s before retry...`);
           await sleep(waitTime);
           continue;
+        } else {
+          console.log(`[Figma] Max retries (${maxRetries}) reached. Giving up.`);
         }
       }
       
