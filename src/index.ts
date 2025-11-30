@@ -150,6 +150,9 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
     try {
       const ticketContent = await jiraClient.getTicketContent(issueKey);
       core.info(`Ticket content length: ${ticketContent.fullText.length} chars`);
+      core.info(`=== JIRA TICKET CONTENT START ===`);
+      core.info(ticketContent.fullText);
+      core.info(`=== JIRA TICKET CONTENT END ===`);
 
       // Use LLM to extract Figma links
       core.info('Using LLM to extract Figma links...');
@@ -273,6 +276,9 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
 
     try {
       const ticketContent = await jiraClient.getTicketContent(issueKey);
+      core.info(`=== JIRA TICKET CONTENT START (${issueKey}) ===`);
+      core.info(ticketContent.fullText);
+      core.info(`=== JIRA TICKET CONTENT END ===`);
       const extractionResult = await bedrockClient.extractFigmaLinks(ticketContent.fullText);
       
       for (const link of extractionResult.figmaLinks) {
