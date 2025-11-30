@@ -330,9 +330,20 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
   // Fetch Figma images
   const figmaImages: Array<{ url: string; imageBase64: string }> = [];
   
-  for (const figmaUrl of figmaLinks) {
+  for (let i = 0; i < figmaLinks.length; i++) {
+    const figmaUrl = figmaLinks[i];
+    
+    // Add delay between requests to avoid rate limiting (except for first request)
+    if (i > 0) {
+      core.info(`Waiting 2 seconds before next Figma request to avoid rate limiting...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    
     try {
+      core.info(`Fetching Figma images from: ${figmaUrl}`);
       const images = await figmaClient.getImagesFromUrl(figmaUrl);
+      core.info(`Got ${images.length} image(s) from Figma`);
+      
       for (const img of images) {
         const imageBase64 = await downloadImageAsBase64(img.imageUrl);
         figmaImages.push({
@@ -536,6 +547,5 @@ async function run(): Promise<void> {
     }
   }
 }
-//
 run();
 
