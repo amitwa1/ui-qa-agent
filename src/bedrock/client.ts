@@ -47,6 +47,9 @@ export class BedrockClient {
     // Create HTTP client for API Key authentication
     const baseURL = `https://bedrock-runtime.${config.region}.amazonaws.com`;
     
+    // Debug logging (safe - doesn't expose secrets)
+    console.log(`Bedrock config: region=${config.region}, model=${this.modelId}, hasApiKey=${!!config.apiKey}, apiKeyLength=${config.apiKey?.length || 0}`);
+    
     this.httpClient = axios.create({
       baseURL,
       headers: {
@@ -211,12 +214,27 @@ Guidelines:
       ],
     };
 
-    const response = await this.httpClient.post(
-      `/model/${encodeURIComponent(this.modelId)}/invoke`,
-      body
-    );
+    try {
+      const response = await this.httpClient.post(
+        `/model/${encodeURIComponent(this.modelId)}/invoke`,
+        body
+      );
 
-    return response.data.content[0].text;
+      return response.data.content[0].text;
+    } catch (error: any) {
+      const status = error.response?.status;
+      const errorMessage = error.response?.data?.message || error.message;
+      
+      if (status === 403) {
+        throw new Error(
+          `Bedrock API authentication failed (403 Forbidden). ` +
+          `This usually means the API key is invalid or the model "${this.modelId}" is not accessible. ` +
+          `Details: ${errorMessage}`
+        );
+      }
+      
+      throw error;
+    }
   }
 
   /**
