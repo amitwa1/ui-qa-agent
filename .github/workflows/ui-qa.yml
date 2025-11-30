@@ -1,0 +1,125 @@
+name: UI QA Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  # Job 1: Detect Jira/Figma links on PR open/update
+  detect-design-links:
+    name: Detect Design Links
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    outputs:
+      has_figma_links: ${{ steps.detect.outputs.has_figma_links }}
+      figma_links: ${{ steps.detect.outputs.figma_links }}
+      jira_ticket: ${{ steps.detect.outputs.jira_ticket }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Detect design links
+        id: detect
+        uses: ./
+        with:
+          mode: detect
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          jira-base-url: ${{ secrets.JIRA_BASE_URL }}
+          jira-email: ${{ secrets.JIRA_EMAIL }}
+          jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
+          figma-access-token: ${{ secrets.FIGMA_ACCESS_TOKEN }}
+          bedrock-api-key: ${{ secrets.BEDROCK_API_KEY }}
+          bedrock-region: ${{ secrets.BEDROCK_REGION }}
+          bedrock-model-id: ${{ secrets.BEDROCK_MODEL_ID }}
+
+  # Job 2: Request screenshots if Figma links found
+  request-screenshots:
+    name: Request Screenshots
+    runs-on: ubuntu-latest
+    needs: detect-design-links
+    if: needs.detect-design-links.outputs.has_figma_links == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Request screenshots
+        uses: ./
+        with:
+          mode: request
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          figma-links: ${{ needs.detect-design-links.outputs.figma_links }}
+
+  # Job 3: Analyze screenshots when posted in comments
+  analyze-screenshots:
+    name: Analyze Screenshots
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '![')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Get PR number
+        id: pr
+        run: |
+          PR_URL="${{ github.event.issue.pull_request.url }}"
+          PR_NUMBER=$(echo $PR_URL | grep -oE '[0-9]+$')
+          echo "number=$PR_NUMBER" >> $GITHUB_OUTPUT
+
+      - name: Analyze screenshots
+        uses: ./
+        with:
+          mode: analyze
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          jira-base-url: ${{ secrets.JIRA_BASE_URL }}
+          jira-email: ${{ secrets.JIRA_EMAIL }}
+          jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
+          figma-access-token: ${{ secrets.FIGMA_ACCESS_TOKEN }}
+          bedrock-api-key: ${{ secrets.BEDROCK_API_KEY }}
+          bedrock-region: ${{ secrets.BEDROCK_REGION }}
+          bedrock-model-id: ${{ secrets.BEDROCK_MODEL_ID }}
+          pr-number: ${{ steps.pr.outputs.number }}
+          comment-id: ${{ github.event.comment.id }}
+
