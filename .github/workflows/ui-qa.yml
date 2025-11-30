@@ -93,19 +93,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           figma-links: ${{ needs.detect-design-links.outputs.figma_links }}
 
-  # Debug job to see what's in the event
-  debug-event:
-    name: Debug Event
-    runs-on: ubuntu-latest
-    if: github.event_name == 'issue_comment'
-    steps:
-      - name: Debug event payload
-        run: |
-          echo "Event name: ${{ github.event_name }}"
-          echo "Is PR: ${{ github.event.issue.pull_request != '' }}"
-          echo "Comment body: ${{ github.event.comment.body }}"
-          echo "Contains qa!: ${{ contains(github.event.comment.body, 'qa!') }}"
-
   # Job 3: Analyze screenshots when posted in comments
   analyze-screenshots:
     name: Analyze Screenshots

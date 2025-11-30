@@ -264,25 +264,61 @@ export class JiraClient {
    */
   async addComment(issueKey: string, commentBody: string): Promise<void> {
     // Convert plain text to ADF format
+    const paragraphs = commentBody.split('\n\n').filter(p => p.trim());
+    
+    const adfContent = paragraphs.map(paragraph => {
+      const lines = paragraph.split('\n');
+      const content: any[] = [];
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        // Only add non-empty text nodes
+        if (line) {
+          content.push({ type: 'text', text: line });
+        }
+        // Add hardBreak between lines (not after the last line)
+        if (i < lines.length - 1) {
+          content.push({ type: 'hardBreak' });
+        }
+      }
+      
+      // If paragraph has no content, add a space to avoid empty paragraph
+      if (content.length === 0) {
+        content.push({ type: 'text', text: ' ' });
+      }
+      
+      return {
+        type: 'paragraph',
+        content,
+      };
+    });
+
+    // Ensure we have at least one paragraph
+    if (adfContent.length === 0) {
+      adfContent.push({
+        type: 'paragraph',
+        content: [{ type: 'text', text: commentBody || ' ' }],
+      });
+    }
+
     const adfBody = {
       type: 'doc',
       version: 1,
-      content: commentBody.split('\n\n').map(paragraph => ({
-        type: 'paragraph',
-        content: paragraph.split('\n').flatMap((line, index, array) => {
-          const textNode: any = { type: 'text', text: line };
-          // Add hardBreak between lines within the same paragraph
-          if (index < array.length - 1) {
-            return [textNode, { type: 'hardBreak' }];
-          }
-          return [textNode];
-        }),
-      })),
+      content: adfContent,
     };
 
-    await this.client.post(`/issue/${issueKey}/comment`, {
-      body: adfBody,
-    });
+    console.log(`Posting comment to Jira ticket ${issueKey}`);
+    console.log(`ADF Body: ${JSON.stringify(adfBody, null, 2)}`);
+
+    try {
+      await this.client.post(`/issue/${issueKey}/comment`, {
+        body: adfBody,
+      });
+      console.log(`Successfully posted comment to ${issueKey}`);
+    } catch (error: any) {
+      console.error(`Failed to post comment to ${issueKey}:`, error.response?.data || error.message);
+      throw error;
+    }
   }
 
   /**

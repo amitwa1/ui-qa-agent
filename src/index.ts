@@ -409,14 +409,22 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
 
   // Post results to Jira ticket as well
   if (jiraTicketKey) {
+    core.info(`Attempting to post results to Jira ticket ${jiraTicketKey}...`);
     try {
       const prUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}`;
       const jiraComment = buildJiraComment(results, prUrl);
+      core.info(`Jira comment length: ${jiraComment.length} characters`);
       await jiraClient.addComment(jiraTicketKey, jiraComment);
-      core.info(`Posted UI QA results to Jira ticket ${jiraTicketKey}`);
-    } catch (error) {
-      core.warning(`Failed to post comment to Jira ticket ${jiraTicketKey}: ${error}`);
+      core.info(`Successfully posted UI QA results to Jira ticket ${jiraTicketKey}`);
+    } catch (error: any) {
+      core.error(`Failed to post comment to Jira ticket ${jiraTicketKey}`);
+      core.error(`Error: ${error.message || error}`);
+      if (error.response?.data) {
+        core.error(`Jira API response: ${JSON.stringify(error.response.data)}`);
+      }
     }
+  } else {
+    core.info('No Jira ticket key found, skipping Jira comment');
   }
 
   core.setOutput('result', JSON.stringify(results));
