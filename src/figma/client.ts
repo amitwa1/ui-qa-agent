@@ -2,6 +2,7 @@ import axios, { AxiosInstance, AxiosError } from 'axios';
 
 export interface FigmaConfig {
   accessToken: string;
+  useMock?: boolean; // Enable mock mode to skip real API calls
 }
 
 export interface FigmaFileInfo {
@@ -103,10 +104,20 @@ async function withRetry<T>(
   throw lastError || new Error(`Failed after ${maxRetries} retries`);
 }
 
+// A simple 1x1 red PNG image as base64 for mock mode
+const MOCK_IMAGE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+
 export class FigmaClient {
   private client: AxiosInstance;
+  private useMock: boolean;
 
   constructor(config: FigmaConfig) {
+    this.useMock = config.useMock || false;
+    
+    if (this.useMock) {
+      console.log('[Figma] 🎭 MOCK MODE ENABLED - No real API calls will be made');
+    }
+    
     this.client = axios.create({
       baseURL: 'https://api.figma.com/v1',
       headers: {
@@ -266,6 +277,16 @@ export class FigmaClient {
       throw new Error(`Invalid Figma URL: ${figmaUrl}`);
     }
 
+    // Mock mode - return fake image data
+    if (this.useMock) {
+      console.log(`[Figma] 🎭 Mock: Returning fake image for ${figmaUrl}`);
+      const mockNodeId = fileInfo.nodeId || '0:1';
+      return [{
+        nodeId: mockNodeId,
+        imageUrl: `mock://figma-image/${fileInfo.fileKey}/${mockNodeId}`,
+      }];
+    }
+
     let nodeIds: string[];
     
     if (fileInfo.nodeId) {
@@ -294,6 +315,20 @@ export class FigmaClient {
     }
 
     return results;
+  }
+  
+  /**
+   * Check if mock mode is enabled
+   */
+  isMockMode(): boolean {
+    return this.useMock;
+  }
+  
+  /**
+   * Get mock image as base64 (for testing)
+   */
+  getMockImageBase64(): string {
+    return MOCK_IMAGE_BASE64;
   }
 
   /**

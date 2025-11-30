@@ -132,6 +132,7 @@ jobs:
           jira-email: ${{ secrets.JIRA_EMAIL }}
           jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
           figma-access-token: ${{ secrets.FIGMA_ACCESS_TOKEN }}
+          figma-mock-mode: 'true'  # Enable mock mode to test without hitting Figma rate limits
           bedrock-api-key: ${{ secrets.BEDROCK_API_KEY }}
           bedrock-region: ${{ secrets.BEDROCK_REGION }}
           bedrock-model-id: ${{ secrets.BEDROCK_MODEL_ID }}

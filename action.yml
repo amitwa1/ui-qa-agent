@@ -25,6 +25,10 @@ inputs:
   figma-access-token:
     description: 'Figma personal access token'
     required: false
+  figma-mock-mode:
+    description: 'Enable mock mode for Figma to skip API calls (for testing)'
+    required: false
+    default: 'false'
   bedrock-api-key:
     description: 'Bedrock API Key for authentication (recommended)'
     required: false
