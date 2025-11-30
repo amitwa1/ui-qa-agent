@@ -51,28 +51,39 @@ export class JiraClient {
    * Extract issue key from a Jira URL
    * Supports formats like:
    * - https://company.atlassian.net/browse/PROJ-123
+   * - https://company.atlassian.net/browse/PROJ-123?atlOrigin=...
    * - https://company.atlassian.net/jira/software/projects/PROJ/boards/1?selectedIssue=PROJ-123
    */
   static extractIssueKeyFromUrl(url: string): string | null {
-    // Pattern for /browse/PROJ-123
+    // Clean the URL - remove trailing punctuation and whitespace
+    const cleanUrl = url.trim().replace(/[)\]}>.,;:!?]+$/, '');
+    
+    // Pattern for /browse/PROJ-123 (with optional query params)
     const browsePattern = /\/browse\/([A-Z]+-\d+)/i;
-    const browseMatch = url.match(browsePattern);
+    const browseMatch = cleanUrl.match(browsePattern);
     if (browseMatch) {
       return browseMatch[1].toUpperCase();
     }
 
     // Pattern for selectedIssue=PROJ-123
     const selectedIssuePattern = /selectedIssue=([A-Z]+-\d+)/i;
-    const selectedMatch = url.match(selectedIssuePattern);
+    const selectedMatch = cleanUrl.match(selectedIssuePattern);
     if (selectedMatch) {
       return selectedMatch[1].toUpperCase();
     }
 
     // Pattern for /issues/PROJ-123
     const issuesPattern = /\/issues\/([A-Z]+-\d+)/i;
-    const issuesMatch = url.match(issuesPattern);
+    const issuesMatch = cleanUrl.match(issuesPattern);
     if (issuesMatch) {
       return issuesMatch[1].toUpperCase();
+    }
+
+    // Try to find any issue key pattern in the URL (fallback)
+    const anyKeyPattern = /([A-Z]{2,}-\d+)/i;
+    const anyMatch = cleanUrl.match(anyKeyPattern);
+    if (anyMatch) {
+      return anyMatch[1].toUpperCase();
     }
 
     return null;
@@ -80,11 +91,36 @@ export class JiraClient {
 
   /**
    * Find Jira URLs in text (PR description)
+   * Handles various formats including markdown links
    */
   static findJiraUrls(text: string): string[] {
-    const jiraUrlPattern = /https?:\/\/[^\s]+\.atlassian\.net[^\s]*/gi;
-    const matches = text.match(jiraUrlPattern) || [];
-    return matches;
+    const urls: string[] = [];
+    
+    // Pattern 1: Direct URLs with atlassian.net
+    const directUrlPattern = /https?:\/\/[a-zA-Z0-9-]+\.atlassian\.net\/[^\s\])"'>]*/gi;
+    const directMatches = text.match(directUrlPattern) || [];
+    urls.push(...directMatches);
+    
+    // Pattern 2: Markdown links [text](url)
+    const markdownLinkPattern = /\[([^\]]*)\]\((https?:\/\/[a-zA-Z0-9-]+\.atlassian\.net\/[^)]+)\)/gi;
+    let mdMatch: RegExpExecArray | null;
+    while ((mdMatch = markdownLinkPattern.exec(text)) !== null) {
+      if (!urls.includes(mdMatch[2])) {
+        urls.push(mdMatch[2]);
+      }
+    }
+    
+    // Pattern 3: HTML links <a href="url">
+    const htmlLinkPattern = /href=["'](https?:\/\/[a-zA-Z0-9-]+\.atlassian\.net\/[^"']+)["']/gi;
+    let htmlMatch: RegExpExecArray | null;
+    while ((htmlMatch = htmlLinkPattern.exec(text)) !== null) {
+      if (!urls.includes(htmlMatch[1])) {
+        urls.push(htmlMatch[1]);
+      }
+    }
+
+    // Clean URLs - remove trailing punctuation
+    return urls.map(url => url.replace(/[)\]}>.,;:!?]+$/, ''));
   }
 
   /**

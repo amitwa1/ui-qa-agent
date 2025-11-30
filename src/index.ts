@@ -85,14 +85,21 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
   const prBody = context.payload.pull_request.body || '';
 
   core.info(`Analyzing PR #${pullNumber} for Jira/Figma links...`);
+  core.info(`PR Body length: ${prBody.length} characters`);
+  core.info(`PR Body preview: ${prBody.substring(0, 500)}...`);
 
   const prHandler = new PRHandler(config.githubToken, owner, repo);
 
   // Find Jira URLs in PR description
   const jiraUrls = JiraClient.findJiraUrls(prBody);
   
+  core.info(`Raw Jira URLs found: ${JSON.stringify(jiraUrls)}`);
+  
   if (jiraUrls.length === 0) {
     core.info('No Jira URLs found in PR description');
+    core.info('Looking for atlassian.net in body...');
+    core.info(`Contains "atlassian.net": ${prBody.includes('atlassian.net')}`);
+    core.info(`Contains "jira": ${prBody.toLowerCase().includes('jira')}`);
     core.setOutput('has_figma_links', 'false');
     core.setOutput('figma_links', '[]');
     core.setOutput('jira_ticket', '');
@@ -100,6 +107,12 @@ async function runDetectMode(config: ActionConfig): Promise<void> {
   }
 
   core.info(`Found ${jiraUrls.length} Jira URL(s): ${jiraUrls.join(', ')}`);
+  
+  // Log extracted issue keys
+  for (const url of jiraUrls) {
+    const key = JiraClient.extractIssueKeyFromUrl(url);
+    core.info(`URL: ${url} -> Issue Key: ${key || 'NOT FOUND'}`);
+  }
 
   // Initialize clients
   if (!config.jiraBaseUrl || !config.jiraEmail || !config.jiraApiToken) {
