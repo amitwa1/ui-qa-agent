@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 
 export interface FigmaConfig {
   accessToken: string;
@@ -20,6 +20,63 @@ export interface FigmaNodeInfo {
   id: string;
   name: string;
   type: string;
+}
+
+// Retry configuration
+const MAX_RETRIES = 5;
+const INITIAL_DELAY_MS = 2000; // 2 seconds
+const MAX_DELAY_MS = 60000; // 60 seconds
+
+/**
+ * Sleep for a given number of milliseconds
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Execute a function with retry logic for rate limiting (429 errors)
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  context: string,
+  maxRetries: number = MAX_RETRIES
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      
+      // Only retry on 429 (rate limit) errors
+      if (axiosError.response?.status === 429) {
+        lastError = error as Error;
+        
+        if (attempt < maxRetries) {
+          // Calculate delay with exponential backoff
+          const delay = Math.min(
+            INITIAL_DELAY_MS * Math.pow(2, attempt),
+            MAX_DELAY_MS
+          );
+          
+          // Check for Retry-After header
+          const retryAfter = axiosError.response.headers['retry-after'];
+          const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : delay;
+          
+          console.log(`[Figma] Rate limited on ${context}. Attempt ${attempt + 1}/${maxRetries + 1}. Waiting ${waitTime}ms before retry...`);
+          await sleep(waitTime);
+          continue;
+        }
+      }
+      
+      // For non-429 errors or final attempt, throw immediately
+      throw error;
+    }
+  }
+  
+  throw lastError || new Error(`Failed after ${maxRetries} retries`);
 }
 
 export class FigmaClient {
@@ -95,20 +152,30 @@ export class FigmaClient {
    * Get file information
    */
   async getFile(fileKey: string): Promise<any> {
-    const response = await this.client.get(`/files/${fileKey}`);
-    return response.data;
+    return withRetry(
+      async () => {
+        const response = await this.client.get(`/files/${fileKey}`);
+        return response.data;
+      },
+      `getFile(${fileKey})`
+    );
   }
 
   /**
    * Get specific nodes from a file
    */
   async getNodes(fileKey: string, nodeIds: string[]): Promise<any> {
-    const response = await this.client.get(`/files/${fileKey}/nodes`, {
-      params: {
-        ids: nodeIds.join(','),
+    return withRetry(
+      async () => {
+        const response = await this.client.get(`/files/${fileKey}/nodes`, {
+          params: {
+            ids: nodeIds.join(','),
+          },
+        });
+        return response.data;
       },
-    });
-    return response.data;
+      `getNodes(${fileKey}, ${nodeIds.join(',')})`
+    );
   }
 
   /**
@@ -124,34 +191,44 @@ export class FigmaClient {
   ): Promise<Map<string, string>> {
     const { format = 'png', scale = 2 } = options;
 
-    const response = await this.client.get(`/images/${fileKey}`, {
-      params: {
-        ids: nodeIds.join(','),
-        format,
-        scale,
-      },
-    });
+    return withRetry(
+      async () => {
+        const response = await this.client.get(`/images/${fileKey}`, {
+          params: {
+            ids: nodeIds.join(','),
+            format,
+            scale,
+          },
+        });
 
-    const images = new Map<string, string>();
-    if (response.data.images) {
-      for (const [nodeId, imageUrl] of Object.entries(response.data.images)) {
-        if (imageUrl) {
-          images.set(nodeId, imageUrl as string);
+        const images = new Map<string, string>();
+        if (response.data.images) {
+          for (const [nodeId, imageUrl] of Object.entries(response.data.images)) {
+            if (imageUrl) {
+              images.set(nodeId, imageUrl as string);
+            }
+          }
         }
-      }
-    }
 
-    return images;
+        return images;
+      },
+      `getNodeImages(${fileKey}, ${nodeIds.join(',')})`
+    );
   }
 
   /**
    * Download image data from a Figma image URL
    */
   async downloadImage(imageUrl: string): Promise<Buffer> {
-    const response = await axios.get(imageUrl, {
-      responseType: 'arraybuffer',
-    });
-    return Buffer.from(response.data);
+    return withRetry(
+      async () => {
+        const response = await axios.get(imageUrl, {
+          responseType: 'arraybuffer',
+        });
+        return Buffer.from(response.data);
+      },
+      `downloadImage`
+    );
   }
 
   /**
