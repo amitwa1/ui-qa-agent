@@ -257,5 +257,39 @@ export class JiraClient {
       fullText,
     };
   }
+
+  /**
+   * Add a comment to a Jira issue
+   * The comment body should be in Atlassian Document Format (ADF)
+   */
+  async addComment(issueKey: string, commentBody: string): Promise<void> {
+    // Convert plain text to ADF format
+    const adfBody = {
+      type: 'doc',
+      version: 1,
+      content: commentBody.split('\n\n').map(paragraph => ({
+        type: 'paragraph',
+        content: paragraph.split('\n').flatMap((line, index, array) => {
+          const textNode: any = { type: 'text', text: line };
+          // Add hardBreak between lines within the same paragraph
+          if (index < array.length - 1) {
+            return [textNode, { type: 'hardBreak' }];
+          }
+          return [textNode];
+        }),
+      })),
+    };
+
+    await this.client.post(`/issue/${issueKey}/comment`, {
+      body: adfBody,
+    });
+  }
+
+  /**
+   * Build the Jira issue URL
+   */
+  getIssueUrl(issueKey: string): string {
+    return `${this.baseUrl}/browse/${issueKey}`;
+  }
 }
 

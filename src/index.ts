@@ -269,10 +269,16 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
   const jiraUrls = JiraClient.findJiraUrls(prInfo.body);
 
   let figmaLinks: string[] = [];
+  let jiraTicketKey = '';
 
   for (const jiraUrl of jiraUrls) {
     const issueKey = JiraClient.extractIssueKeyFromUrl(jiraUrl);
     if (!issueKey) continue;
+
+    // Track the first Jira ticket key for commenting
+    if (!jiraTicketKey) {
+      jiraTicketKey = issueKey;
+    }
 
     try {
       const ticketContent = await jiraClient.getTicketContent(issueKey);
@@ -376,7 +382,7 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
     }
   }
 
-  // Post results
+  // Post results to GitHub PR
   await prHandler.postComparisonResults(pullNumber, results);
 
   // Update commit status based on results
@@ -401,8 +407,96 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
     'UI QA Agent'
   );
 
+  // Post results to Jira ticket as well
+  if (jiraTicketKey) {
+    try {
+      const prUrl = `https://github.com/${owner}/${repo}/pull/${pullNumber}`;
+      const jiraComment = buildJiraComment(results, prUrl);
+      await jiraClient.addComment(jiraTicketKey, jiraComment);
+      core.info(`Posted UI QA results to Jira ticket ${jiraTicketKey}`);
+    } catch (error) {
+      core.warning(`Failed to post comment to Jira ticket ${jiraTicketKey}: ${error}`);
+    }
+  }
+
   core.setOutput('result', JSON.stringify(results));
   core.setOutput('status', statusState);
+}
+
+/**
+ * Build a plain text comment for Jira from the comparison results
+ */
+function buildJiraComment(
+  results: Array<{
+    figmaUrl: string;
+    screenshotUrl: string;
+    overallMatch: 'pass' | 'fail' | 'warning';
+    matchPercentage: number;
+    summary: string;
+    issues: Array<{
+      severity: string;
+      category: string;
+      description: string;
+      location: string;
+    }>;
+    recommendations: string[];
+  }>,
+  prUrl: string
+): string {
+  const passCount = results.filter(r => r.overallMatch === 'pass').length;
+  const failCount = results.filter(r => r.overallMatch === 'fail').length;
+  const warningCount = results.filter(r => r.overallMatch === 'warning').length;
+
+  let overallStatus = '✅ All Checks Passed';
+  if (failCount > 0) {
+    overallStatus = '❌ Issues Found';
+  } else if (warningCount > 0) {
+    overallStatus = '⚠️ Minor Issues';
+  }
+
+  let comment = `🔍 UI QA Analysis Results
+
+Overall Status: ${overallStatus}
+
+Summary:
+• Pass: ${passCount}
+• Warning: ${warningCount}
+• Fail: ${failCount}
+
+`;
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    const statusEmoji = result.overallMatch === 'pass' ? '✅' : result.overallMatch === 'warning' ? '⚠️' : '❌';
+
+    comment += `--- Comparison ${i + 1} ---
+Status: ${statusEmoji} ${result.matchPercentage}% match
+Figma: ${result.figmaUrl}
+Summary: ${result.summary}
+`;
+
+    if (result.issues.length > 0) {
+      comment += `\nIssues:\n`;
+      for (const issue of result.issues) {
+        comment += `• [${issue.severity.toUpperCase()}] ${issue.category}: ${issue.description} (${issue.location})\n`;
+      }
+    }
+
+    if (result.recommendations.length > 0) {
+      comment += `\nRecommendations:\n`;
+      for (const rec of result.recommendations) {
+        comment += `• ${rec}\n`;
+      }
+    }
+
+    comment += '\n';
+  }
+
+  comment += `---
+View full details in PR: ${prUrl}
+Analysis performed by UI QA Agent`;
+
+  return comment;
 }
 
 async function run(): Promise<void> {

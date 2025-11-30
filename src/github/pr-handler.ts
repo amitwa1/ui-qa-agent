@@ -156,12 +156,35 @@ export class PRHandler {
   }
 
   /**
+   * Find an existing comment by a marker string
+   */
+  async findCommentByMarker(pullNumber: number, marker: string): Promise<PRComment | null> {
+    const comments = await this.getPRComments(pullNumber);
+    return comments.find(comment => comment.body.includes(marker)) || null;
+  }
+
+  /**
+   * Post or update a comment (update if exists with marker, otherwise create)
+   */
+  async postOrUpdateComment(pullNumber: number, body: string, marker: string): Promise<number> {
+    const existingComment = await this.findCommentByMarker(pullNumber, marker);
+    
+    if (existingComment) {
+      await this.updateComment(existingComment.id, body);
+      return existingComment.id;
+    }
+    
+    return this.postComment(pullNumber, body);
+  }
+
+  /**
    * Post a request for screenshots
    */
   async requestScreenshots(pullNumber: number, figmaLinks: string[]): Promise<number> {
     const figmaListItems = figmaLinks.map(link => `- ${link}`).join('\n');
     
-    const body = `## 📸 UI QA: Screenshots Required
+    const marker = '## 📸 UI QA: Screenshots Required';
+    const body = `${marker}
 
 I found the following Figma design link(s) in the linked Jira ticket:
 
@@ -177,7 +200,7 @@ ${figmaListItems}
 ---
 *UI QA Agent will analyze your screenshots and provide feedback.*`;
 
-    return this.postComment(pullNumber, body);
+    return this.postOrUpdateComment(pullNumber, body, marker);
   }
 
   /**
@@ -212,7 +235,8 @@ ${figmaListItems}
       minor: '🟡',
     };
 
-    let body = `## 🔍 UI QA Analysis Results\n\n`;
+    const marker = '## 🔍 UI QA Analysis Results';
+    let body = `${marker}\n\n`;
 
     // Overall summary
     const passCount = results.filter(r => r.overallMatch === 'pass').length;
@@ -267,7 +291,7 @@ ${figmaListItems}
 
     body += `---\n*Analysis performed by UI QA Agent*`;
 
-    return this.postComment(pullNumber, body);
+    return this.postOrUpdateComment(pullNumber, body, marker);
   }
 
   /**
