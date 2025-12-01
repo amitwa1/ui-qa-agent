@@ -1,0 +1,266 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.FigmaClient = void 0;
+const axios_1 = __importDefault(require("axios"));
+// Retry configuration
+const MAX_RETRIES = 5;
+const INITIAL_DELAY_MS = 2000; // 2 seconds
+const MAX_DELAY_MS = 60000; // 60 seconds
+/**
+ * Sleep for a given number of milliseconds
+ */
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+/**
+ * Execute a function with retry logic for rate limiting (429 errors)
+ */
+async function withRetry(fn, context, maxRetries = MAX_RETRIES) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        }
+        catch (error) {
+            const axiosError = error;
+            // Only retry on 429 (rate limit) errors
+            if (axiosError.response?.status === 429) {
+                lastError = error;
+                // Extract and log all Figma rate limit headers
+                const headers = axiosError.response.headers;
+                const retryAfter = headers['retry-after'];
+                const planTier = headers['x-figma-plan-tier'];
+                const rateLimitType = headers['x-figma-rate-limit-type'];
+                const upgradeLink = headers['x-figma-upgrade-link'];
+                console.log(`[Figma] ========== RATE LIMIT INFO ==========`);
+                console.log(`[Figma] Context: ${context}`);
+                console.log(`[Figma] Retry-After: ${retryAfter} seconds`);
+                console.log(`[Figma] X-Figma-Plan-Tier: ${planTier}`);
+                console.log(`[Figma] X-Figma-Rate-Limit-Type: ${rateLimitType} (low=Viewer/Collab, high=Full/Dev)`);
+                console.log(`[Figma] X-Figma-Upgrade-Link: ${upgradeLink}`);
+                console.log(`[Figma] ========================================`);
+                if (attempt < maxRetries) {
+                    // Use Retry-After header if provided and reasonable
+                    let waitTime;
+                    const retrySeconds = parseInt(retryAfter, 10);
+                    if (!isNaN(retrySeconds) && retrySeconds > 0) {
+                        // Use Figma's suggested retry time, but cap at MAX_DELAY_MS
+                        waitTime = Math.min(retrySeconds * 1000, MAX_DELAY_MS);
+                        console.log(`[Figma] Using Retry-After value: ${retrySeconds}s (capped to ${waitTime / 1000}s)`);
+                    }
+                    else {
+                        // Fallback to exponential backoff
+                        waitTime = Math.min(INITIAL_DELAY_MS * Math.pow(2, attempt), MAX_DELAY_MS);
+                        console.log(`[Figma] Using exponential backoff: ${waitTime / 1000}s`);
+                    }
+                    console.log(`[Figma] Attempt ${attempt + 1}/${maxRetries + 1}. Waiting ${waitTime / 1000}s before retry...`);
+                    await sleep(waitTime);
+                    continue;
+                }
+                else {
+                    console.log(`[Figma] Max retries (${maxRetries}) reached. Giving up.`);
+                }
+            }
+            // For non-429 errors or final attempt, throw immediately
+            throw error;
+        }
+    }
+    throw lastError || new Error(`Failed after ${maxRetries} retries`);
+}
+// A simple 1x1 red PNG image as base64 for mock mode
+const MOCK_IMAGE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+class FigmaClient {
+    constructor(config) {
+        this.useMock = config.useMock || false;
+        if (this.useMock) {
+            console.log('[Figma] 🎭 MOCK MODE ENABLED - No real API calls will be made');
+        }
+        this.client = axios_1.default.create({
+            baseURL: 'https://api.figma.com/v1',
+            headers: {
+                'X-Figma-Token': config.accessToken,
+                'Accept': 'application/json',
+            },
+        });
+    }
+    /**
+     * Parse a Figma URL and extract file key and node ID
+     * Supports formats like:
+     * - https://www.figma.com/file/ABC123/FileName
+     * - https://www.figma.com/design/ABC123/FileName?node-id=1-2
+     * - https://www.figma.com/file/ABC123/FileName?node-id=1%3A2
+     * - https://www.figma.com/proto/ABC123/FileName
+     */
+    static parseFigmaUrl(url) {
+        try {
+            const urlObj = new URL(url);
+            // Check if it's a Figma URL
+            if (!urlObj.hostname.includes('figma.com')) {
+                return null;
+            }
+            // Extract file key from path
+            // Patterns: /file/KEY/, /design/KEY/, /proto/KEY/
+            const pathMatch = urlObj.pathname.match(/\/(file|design|proto)\/([a-zA-Z0-9]+)/);
+            if (!pathMatch) {
+                return null;
+            }
+            const fileKey = pathMatch[2];
+            // Extract node ID from query params
+            let nodeId;
+            const nodeIdParam = urlObj.searchParams.get('node-id');
+            if (nodeIdParam) {
+                // Node IDs in URLs use - but API uses :
+                // Decode URL encoding (e.g., %3A to :)
+                nodeId = decodeURIComponent(nodeIdParam).replace('-', ':');
+            }
+            // Extract file name from path
+            const pathParts = urlObj.pathname.split('/');
+            const fileName = pathParts[pathParts.length - 1] || undefined;
+            return {
+                fileKey,
+                nodeId,
+                fileName: fileName ? decodeURIComponent(fileName) : undefined,
+            };
+        }
+        catch {
+            return null;
+        }
+    }
+    /**
+     * Check if a URL is a valid Figma URL
+     */
+    static isFigmaUrl(url) {
+        return this.parseFigmaUrl(url) !== null;
+    }
+    /**
+     * Get file information
+     */
+    async getFile(fileKey) {
+        return withRetry(async () => {
+            const response = await this.client.get(`/files/${fileKey}`);
+            return response.data;
+        }, `getFile(${fileKey})`);
+    }
+    /**
+     * Get specific nodes from a file
+     */
+    async getNodes(fileKey, nodeIds) {
+        return withRetry(async () => {
+            const response = await this.client.get(`/files/${fileKey}/nodes`, {
+                params: {
+                    ids: nodeIds.join(','),
+                },
+            });
+            return response.data;
+        }, `getNodes(${fileKey}, ${nodeIds.join(',')})`);
+    }
+    /**
+     * Get rendered images for specific nodes
+     */
+    async getNodeImages(fileKey, nodeIds, options = {}) {
+        const { format = 'png', scale = 2 } = options;
+        return withRetry(async () => {
+            const response = await this.client.get(`/images/${fileKey}`, {
+                params: {
+                    ids: nodeIds.join(','),
+                    format,
+                    scale,
+                },
+            });
+            const images = new Map();
+            if (response.data.images) {
+                for (const [nodeId, imageUrl] of Object.entries(response.data.images)) {
+                    if (imageUrl) {
+                        images.set(nodeId, imageUrl);
+                    }
+                }
+            }
+            return images;
+        }, `getNodeImages(${fileKey}, ${nodeIds.join(',')})`);
+    }
+    /**
+     * Download image data from a Figma image URL
+     */
+    async downloadImage(imageUrl) {
+        return withRetry(async () => {
+            const response = await axios_1.default.get(imageUrl, {
+                responseType: 'arraybuffer',
+            });
+            return Buffer.from(response.data);
+        }, `downloadImage`);
+    }
+    /**
+     * Get images for a Figma URL (convenience method)
+     * If a specific node is in the URL, gets that node's image
+     * Otherwise, gets the first page/frame
+     */
+    async getImagesFromUrl(figmaUrl) {
+        const fileInfo = FigmaClient.parseFigmaUrl(figmaUrl);
+        if (!fileInfo) {
+            throw new Error(`Invalid Figma URL: ${figmaUrl}`);
+        }
+        // Mock mode - return fake image data
+        if (this.useMock) {
+            console.log(`[Figma] 🎭 Mock: Returning fake image for ${figmaUrl}`);
+            const mockNodeId = fileInfo.nodeId || '0:1';
+            return [{
+                    nodeId: mockNodeId,
+                    imageUrl: `mock://figma-image/${fileInfo.fileKey}/${mockNodeId}`,
+                }];
+        }
+        let nodeIds;
+        if (fileInfo.nodeId) {
+            // Use the specific node from the URL
+            nodeIds = [fileInfo.nodeId];
+        }
+        else {
+            // Get the file and find the first page's children (frames)
+            const file = await this.getFile(fileInfo.fileKey);
+            const firstPage = file.document.children[0];
+            if (firstPage && firstPage.children && firstPage.children.length > 0) {
+                // Get first few frames (limit to 5 to avoid too many)
+                nodeIds = firstPage.children.slice(0, 5).map((child) => child.id);
+            }
+            else {
+                nodeIds = [firstPage.id];
+            }
+        }
+        const imageUrls = await this.getNodeImages(fileInfo.fileKey, nodeIds);
+        const results = [];
+        for (const [nodeId, imageUrl] of imageUrls) {
+            results.push({
+                nodeId,
+                imageUrl,
+            });
+        }
+        return results;
+    }
+    /**
+     * Check if mock mode is enabled
+     */
+    isMockMode() {
+        return this.useMock;
+    }
+    /**
+     * Get mock image as base64 (for testing)
+     */
+    getMockImageBase64() {
+        return MOCK_IMAGE_BASE64;
+    }
+    /**
+     * Get images with downloaded data
+     */
+    async getImagesWithData(figmaUrl) {
+        const results = await this.getImagesFromUrl(figmaUrl);
+        // Download all images in parallel
+        await Promise.all(results.map(async (result) => {
+            result.imageData = await this.downloadImage(result.imageUrl);
+        }));
+        return results;
+    }
+}
+exports.FigmaClient = FigmaClient;
+//# sourceMappingURL=client.js.map

@@ -310,19 +310,22 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
     return;
   }
 
-  // Get screenshots from the comment
-  const comments = await prHandler.findScreenshotComments(pullNumber);
-  
-  // Find the triggering comment if specified
+  // Get all comments and filter for ones with "qa!" and screenshots
+  const allComments = await prHandler.getPRComments(pullNumber);
+  const qaCommentsWithScreenshots = allComments
+    .filter(c => c.body.toLowerCase().includes('qa!') && c.imageUrls.length > 0)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
   let screenshotUrls: string[] = [];
-  if (config.commentId) {
-    const triggerComment = comments.find(c => c.id === config.commentId);
-    if (triggerComment) {
-      screenshotUrls = triggerComment.imageUrls;
+  if (qaCommentsWithScreenshots.length > 0) {
+    // Take only the most recent "qa!" comment with screenshots
+    const latestComment = qaCommentsWithScreenshots[0];
+    screenshotUrls = latestComment.imageUrls;
+    core.info(`Using screenshots from the latest qa! comment (ID: ${latestComment.id}, created: ${latestComment.createdAt})`);
+    
+    if (qaCommentsWithScreenshots.length > 1) {
+      core.info(`Note: Found ${qaCommentsWithScreenshots.length} qa! comments with screenshots, using only the most recent one`);
     }
-  } else {
-    // Get all screenshots from all comments
-    screenshotUrls = comments.flatMap(c => c.imageUrls);
   }
 
   if (screenshotUrls.length === 0) {

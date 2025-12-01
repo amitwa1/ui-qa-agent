@@ -1,8 +1,11 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
+import { FigmaCache } from './cache';
 
 export interface FigmaConfig {
   accessToken: string;
   useMock?: boolean; // Enable mock mode to skip real API calls
+  cacheDir?: string; // Directory for caching Figma responses
+  cacheTtlMs?: number; // Cache TTL in milliseconds (default: 24 hours)
 }
 
 export interface FigmaFileInfo {
@@ -110,13 +113,21 @@ const MOCK_IMAGE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQ
 export class FigmaClient {
   private client: AxiosInstance;
   private useMock: boolean;
+  private cache: FigmaCache;
 
   constructor(config: FigmaConfig) {
     this.useMock = config.useMock || false;
+    this.cache = new FigmaCache({
+      cacheDir: config.cacheDir,
+      ttlMs: config.cacheTtlMs,
+    });
     
     if (this.useMock) {
       console.log('[Figma] 🎭 MOCK MODE ENABLED - No real API calls will be made');
     }
+    
+    const stats = this.cache.getStats();
+    console.log(`[Figma] Cache initialized with ${stats.entries} existing entries`);
     
     this.client = axios.create({
       baseURL: 'https://api.figma.com/v1',
@@ -270,6 +281,7 @@ export class FigmaClient {
    * Get images for a Figma URL (convenience method)
    * If a specific node is in the URL, gets that node's image
    * Otherwise, gets the first page/frame
+   * Results are cached to avoid hitting Figma API rate limits
    */
   async getImagesFromUrl(figmaUrl: string): Promise<FigmaImageResult[]> {
     const fileInfo = FigmaClient.parseFigmaUrl(figmaUrl);
@@ -285,6 +297,14 @@ export class FigmaClient {
         nodeId: mockNodeId,
         imageUrl: `mock://figma-image/${fileInfo.fileKey}/${mockNodeId}`,
       }];
+    }
+
+    // Check cache first
+    const cacheKey = `images:${figmaUrl}`;
+    const cachedResults = this.cache.get<FigmaImageResult[]>(cacheKey);
+    if (cachedResults) {
+      console.log(`[Figma] Using cached images for: ${figmaUrl}`);
+      return cachedResults;
     }
 
     let nodeIds: string[];
@@ -313,6 +333,9 @@ export class FigmaClient {
         imageUrl,
       });
     }
+
+    // Cache the results
+    this.cache.set(cacheKey, results);
 
     return results;
   }
