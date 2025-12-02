@@ -200,6 +200,26 @@ class FigmaClient {
         }, `downloadImage`);
     }
     /**
+     * Download image and return as base64, with caching
+     * This caches the actual image data to avoid re-downloading
+     */
+    async downloadImageAsBase64Cached(imageUrl) {
+        // Check cache first
+        const cacheKey = `image-base64:${imageUrl}`;
+        const cachedBase64 = this.cache.get(cacheKey);
+        if (cachedBase64) {
+            console.log(`[Figma] Using cached base64 image`);
+            return cachedBase64;
+        }
+        // Download and convert to base64
+        const buffer = await this.downloadImage(imageUrl);
+        const base64 = buffer.toString('base64');
+        // Cache the result
+        this.cache.set(cacheKey, base64);
+        console.log(`[Figma] Downloaded and cached image (${Math.round(base64.length / 1024)}KB)`);
+        return base64;
+    }
+    /**
      * Get images for a Figma URL (convenience method)
      * If a specific node is in the URL, gets that node's image
      * Otherwise, gets the first page/frame
