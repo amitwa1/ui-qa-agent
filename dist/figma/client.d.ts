@@ -1,6 +1,8 @@
 export interface FigmaConfig {
     accessToken: string;
     useMock?: boolean;
+    cacheDir?: string;
+    cacheTtlMs?: number;
 }
 export interface FigmaFileInfo {
     fileKey: string;
@@ -20,6 +22,7 @@ export interface FigmaNodeInfo {
 export declare class FigmaClient {
     private client;
     private useMock;
+    private cache;
     constructor(config: FigmaConfig);
     /**
      * Parse a Figma URL and extract file key and node ID
@@ -57,6 +60,7 @@ export declare class FigmaClient {
      * Get images for a Figma URL (convenience method)
      * If a specific node is in the URL, gets that node's image
      * Otherwise, gets the first page/frame
+     * Results are cached to avoid hitting Figma API rate limits
      */
     getImagesFromUrl(figmaUrl: string): Promise<FigmaImageResult[]>;
     /**

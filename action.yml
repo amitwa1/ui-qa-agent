@@ -29,6 +29,14 @@ inputs:
     description: 'Enable mock mode for Figma to skip API calls (for testing)'
     required: false
     default: 'false'
+  
+  # AI Provider Selection
+  ai-provider:
+    description: 'AI provider to use: bedrock or azure'
+    required: false
+    default: 'azure'
+  
+  # AWS Bedrock Configuration
   bedrock-api-key:
     description: 'Bedrock API Key for authentication (recommended)'
     required: false
@@ -46,6 +54,23 @@ inputs:
   aws-secret-access-key:
     description: 'AWS secret access key for Bedrock (legacy auth)'
     required: false
+  
+  # Azure OpenAI Configuration
+  azure-openai-api-key:
+    description: 'Azure OpenAI API key'
+    required: false
+  azure-openai-endpoint:
+    description: 'Azure OpenAI endpoint URL (e.g., https://your-resource.openai.azure.com/)'
+    required: false
+  azure-openai-deployment:
+    description: 'Azure OpenAI deployment name'
+    required: false
+  azure-openai-api-version:
+    description: 'Azure OpenAI API version (default: 2024-12-01-preview)'
+    required: false
+    default: '2024-12-01-preview'
+  
+  # Other inputs
   pr-number:
     description: 'Pull request number (for analyze mode)'
     required: false
@@ -73,4 +98,3 @@ outputs:
 runs:
   using: 'node20'
   main: 'dist/bundle/index.js'
-

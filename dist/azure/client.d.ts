@@ -1,13 +1,11 @@
 /**
- * AWS Bedrock client for LLM operations
+ * Azure OpenAI client for LLM operations
  */
-export interface BedrockConfig {
-    apiKey?: string;
-    region: string;
-    modelId?: string;
-    anthropicVersion?: string;
-    accessKeyId?: string;
-    secretAccessKey?: string;
+export interface AzureOpenAIConfig {
+    apiKey: string;
+    endpoint: string;
+    deploymentName: string;
+    apiVersion?: string;
 }
 export interface FigmaLinkExtractionResult {
     figmaLinks: string[];
@@ -76,16 +74,15 @@ export interface UXValidationResult {
     overall_status: 'pass' | 'warning' | 'fail';
     conclusion: string;
 }
-export interface UIComparisonIssue {
-    severity: 'critical' | 'major' | 'minor';
-    category: 'missing_element' | 'wrong_style' | 'wrong_position' | 'wrong_content' | 'extra_element';
-    description: string;
-    location: string;
-}
 export interface UIComparisonResult {
     overallMatch: 'pass' | 'fail' | 'warning';
     matchPercentage: number;
-    issues: UIComparisonIssue[];
+    issues: Array<{
+        severity: 'critical' | 'major' | 'minor';
+        category: 'missing_element' | 'wrong_style' | 'wrong_position' | 'wrong_content' | 'extra_element';
+        description: string;
+        location: string;
+    }>;
     summary: string;
     recommendations: string[];
     detailedResult?: UXValidationResult;
@@ -101,11 +98,12 @@ export interface ScreenshotMatchResult {
     unmatchedScreenshots: number[];
     unmatchedFigmaDesigns: number[];
 }
-export declare class BedrockClient {
-    private client;
-    private modelId;
-    private anthropicVersion;
-    constructor(config: BedrockConfig);
+export declare class AzureOpenAIClient {
+    private apiKey;
+    private endpoint;
+    private deploymentName;
+    private apiVersion;
+    constructor(config: AzureOpenAIConfig);
     /**
      * Get the detailed UX validation prompt (ported from ux_validator.py)
      */

@@ -1,6 +1,595 @@
 /******/ (() => { // webpackBootstrap
 /******/ 	var __webpack_modules__ = ({
 
+/***/ 9646:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+/**
+ * Azure OpenAI client for LLM operations
+ */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.AzureOpenAIClient = void 0;
+const axios_1 = __importDefault(__nccwpck_require__(7269));
+class AzureOpenAIClient {
+    constructor(config) {
+        if (!config.apiKey) {
+            throw new Error('Azure OpenAI API key is required');
+        }
+        if (!config.endpoint) {
+            throw new Error('Azure OpenAI endpoint is required');
+        }
+        if (!config.deploymentName) {
+            throw new Error('Azure OpenAI deployment name is required');
+        }
+        this.apiKey = config.apiKey;
+        this.endpoint = config.endpoint.replace(/\/$/, ''); // Remove trailing slash
+        this.deploymentName = config.deploymentName;
+        this.apiVersion = config.apiVersion || '2024-12-01-preview';
+        console.log(`Azure OpenAI client initialized: endpoint=${this.endpoint}, deployment=${this.deploymentName}`);
+    }
+    /**
+     * Get the detailed UX validation prompt (ported from ux_validator.py)
+     */
+    getUXValidationPrompt() {
+        const systemPrompt = `You are a UX/UI design quality assurance expert. Your task is to perform a focused comparison between an input image (first image) and a reference Figma design (second image).
+
+FOCUS ON THESE 6 CRITERIA ONLY:
+
+1. COMPONENT COMPARISON (MISSING & EXTRA)
+   - Identify ALL components in the reference Figma image
+   - Verify each reference component exists in the input image - list MISSING components
+   - Also identify any EXTRA components in the input image that are NOT in the reference (e.g., extra buttons, icons, UI elements)
+   - Components include: buttons, icons, headers, text blocks, images, forms, panels, navigation elements, markers, legends, etc.
+
+2. GRAMMAR AND TEXT CORRECTNESS
+   - Check all text in the input image for grammar, spelling, and correctness
+   - Compare text content with the Figma reference
+   - If the Figma reference has incorrect text, mention it clearly
+   - Flag any grammar or spelling errors in the input image
+
+3. MAJOR COLOR DIFFERENCES
+   - Detect MAJOR color differences including:
+     * Background color differences
+     * Component color differences (buttons, panels, etc.)
+     * Text color differences
+   - Ignore minor shade variations
+   - Focus on significant mismatches (e.g., red vs black background, red vs green buttons)
+
+4. FIELD IMPLEMENTATION CHECK
+   - Verify that all fields within components are implemented in the input image
+   - Account for dynamic content that may differ (e.g., WiFi network names, user-specific data, timestamps, MAC addresses)
+   - Check that the structure and presence of fields match, even if values differ
+   - Note if fields are missing or incorrectly implemented
+
+5. TYPOGRAPHY (FONT, STYLE, SIZE)
+   - Check font family, style (bold/italic/regular), and size
+   - Only flag MAJOR differences (e.g., completely different font family, significantly different sizes)
+   - Ignore minor variations (e.g., 1-2px size differences, slight weight variations)
+
+6. OVERLAPPING BUTTONS/ELEMENTS
+   - Check if any buttons overlap with other UI elements
+   - Identify elements that are positioned incorrectly causing overlaps
+   - Note any layout issues that cause elements to overlap
+
+ANALYSIS STEPS:
+
+STEP 1: List all components in the REFERENCE image (buttons, icons, text, panels, markers, etc.)
+STEP 2: For each reference component, check if it exists in the input image
+STEP 3: Scan the INPUT image for any EXTRA components not in the reference
+STEP 4: Check background and overall color scheme differences
+STEP 5: For each component, check grammar, colors, fields, and typography
+STEP 6: Check for overlapping elements
+
+Provide your response in the following JSON format:
+{
+  "reference_components": [
+    {
+      "name": "Component name from reference",
+      "type": "button/header/text/image/icon/marker/panel/etc",
+      "description": "Description of component location and purpose in reference",
+      "found_in_input": true/false,
+      "issues": {
+        "missing_component": true/false,
+        "missing_component_note": "Explanation if component is missing from input",
+        "grammar_issues": ["List of grammar/spelling errors in this component's text"],
+        "text_mismatch": ["List of text differences (note if Figma has errors)"],
+        "major_color_differences": ["List of major color differences"],
+        "missing_fields": ["List of fields that are missing"],
+        "field_notes": "Notes about field implementation (accounting for dynamic content)",
+        "typography_issues": ["List of major typography differences"]
+      },
+      "status": "pass/warning/fail"
+    }
+  ],
+  "extra_components_in_input": [
+    {
+      "name": "Extra component name found in input but NOT in reference",
+      "type": "button/header/text/image/icon/etc",
+      "description": "Description of this extra component and its location",
+      "severity": "minor/major"
+    }
+  ],
+  "global_issues": {
+    "background_color": {
+      "has_difference": true/false,
+      "reference_color": "Color description in reference",
+      "input_color": "Color description in input",
+      "note": "Description of the difference"
+    },
+    "color_issues": ["List of all color-related issues with descriptions"],
+    "grammar_issues": ["List of all grammar/text issues with descriptions"],
+    "typography_issues": ["List of all major typography issues with descriptions"]
+  },
+  "overlapping_elements": [
+    {
+      "element_name": "Name/description of overlapping element",
+      "overlaps_with": "What it overlaps with",
+      "location": "Where the overlap occurs",
+      "severity": "minor/major"
+    }
+  ],
+  "summary": {
+    "total_reference_components": number,
+    "components_found": number,
+    "components_missing": number,
+    "extra_components_count": number,
+    "grammar_issues_count": number,
+    "color_issues_count": number,
+    "typography_issues_count": number,
+    "overlapping_elements_count": number,
+    "total_issues": number
+  },
+  "overall_status": "pass/warning/fail",
+  "conclusion": "Overall assessment focusing on the 6 criteria"
+}
+
+Be THOROUGH. Identify ALL visible components. Don't miss buttons, icons, or UI elements.`;
+        const userPrompt = `Compare the input image (first image) against the reference Figma design (second image).
+
+IMPORTANT: 
+1. List ALL components from the reference and check if each exists in the input
+2. Find any EXTRA components in input that are NOT in the reference (e.g., extra buttons, icons)
+3. Check background color and overall color scheme
+4. Check for grammar/spelling issues in text
+5. Check field implementation (ignore dynamic values like network names, IDs)
+6. Check for major typography differences
+7. Check for overlapping elements
+
+Provide analysis in the requested JSON format.`;
+        return { system: systemPrompt, user: userPrompt };
+    }
+    /**
+     * Extract Figma links from Jira ticket content using LLM
+     */
+    async extractFigmaLinks(ticketContent) {
+        const prompt = `You are analyzing a Jira ticket to find Figma design links. 
+
+Analyze the following Jira ticket content and extract ALL Figma links/URLs you can find.
+
+Figma URLs typically look like:
+- https://www.figma.com/file/...
+- https://www.figma.com/design/...
+- https://figma.com/file/...
+- https://www.figma.com/proto/...
+
+Also look for:
+- Shortened URLs that might be Figma links (like bit.ly, tinyurl, etc.)
+- References to Figma with nearby URLs
+- Embedded links in text
+
+TICKET CONTENT:
+${ticketContent}
+
+Respond in JSON format:
+{
+  "figmaLinks": ["url1", "url2"],
+  "confidence": "high" | "medium" | "low",
+  "context": "Brief explanation of where the links were found"
+}
+
+If no Figma links are found, return empty array for figmaLinks with "low" confidence.`;
+        const response = await this.invokeModel(prompt);
+        try {
+            const jsonMatch = response.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                return JSON.parse(jsonMatch[0]);
+            }
+        }
+        catch {
+            // Fallback: try to extract URLs directly
+            const figmaUrlPattern = /https?:\/\/(?:www\.)?figma\.com\/(?:file|design|proto)\/[^\s"'<>]+/gi;
+            const matches = ticketContent.match(figmaUrlPattern) || [];
+            return {
+                figmaLinks: matches,
+                confidence: matches.length > 0 ? 'medium' : 'low',
+                context: 'Extracted via regex fallback',
+            };
+        }
+        return {
+            figmaLinks: [],
+            confidence: 'low',
+            context: 'No Figma links found',
+        };
+    }
+    /**
+     * Compare a screenshot against a Figma design using vision with detailed UX validation
+     */
+    async compareUIScreenshot(figmaImageBase64, screenshotBase64, context) {
+        const { system, user } = this.getUXValidationPrompt();
+        const fullPrompt = `${system}\n\n${context ? `Additional Context: ${context}\n\n` : ''}${user}`;
+        const response = await this.invokeModelWithImages(fullPrompt, [
+            { data: screenshotBase64, mediaType: 'image/png' },
+            { data: figmaImageBase64, mediaType: 'image/png' },
+        ]);
+        try {
+            const jsonMatch = response.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const detailedResult = JSON.parse(jsonMatch[0]);
+                // Convert to legacy format for backwards compatibility
+                return this.convertToLegacyFormat(detailedResult);
+            }
+        }
+        catch (error) {
+            console.error('Failed to parse UX validation response:', error);
+            return {
+                overallMatch: 'warning',
+                matchPercentage: 0,
+                issues: [],
+                summary: 'Failed to parse comparison results',
+                recommendations: ['Please review manually'],
+            };
+        }
+        return {
+            overallMatch: 'warning',
+            matchPercentage: 0,
+            issues: [],
+            summary: 'No comparison results generated',
+            recommendations: ['Please review manually'],
+        };
+    }
+    /**
+     * Match screenshots to Figma designs using AI vision analysis
+     * This method analyzes all images and determines which screenshot corresponds to which design
+     */
+    async matchScreenshotsToDesigns(screenshots, figmaDesigns) {
+        // If only one of each, just match them directly
+        if (screenshots.length === 1 && figmaDesigns.length === 1) {
+            return {
+                matches: [{
+                        screenshotIndex: 0,
+                        figmaIndex: 0,
+                        confidence: 100,
+                        reasoning: 'Single screenshot matched to single design',
+                    }],
+                unmatchedScreenshots: [],
+                unmatchedFigmaDesigns: [],
+            };
+        }
+        // Build prompt for AI to match images
+        const prompt = this.buildMatchingPrompt(screenshots.length, figmaDesigns.length);
+        // Prepare all images for the AI - first screenshots, then Figma designs
+        const allImages = [];
+        for (let i = 0; i < screenshots.length; i++) {
+            allImages.push({ data: screenshots[i].base64, mediaType: 'image/png' });
+        }
+        for (let i = 0; i < figmaDesigns.length; i++) {
+            allImages.push({ data: figmaDesigns[i].base64, mediaType: 'image/png' });
+        }
+        try {
+            const response = await this.invokeModelWithImages(prompt, allImages);
+            return this.parseMatchingResponse(response, screenshots.length, figmaDesigns.length);
+        }
+        catch (error) {
+            console.error('Failed to match screenshots to designs:', error);
+            // Fallback: match in order
+            return this.createFallbackMatching(screenshots.length, figmaDesigns.length);
+        }
+    }
+    /**
+     * Build the prompt for matching screenshots to designs
+     */
+    buildMatchingPrompt(screenshotCount, figmaCount) {
+        return `You are a UI/UX expert tasked with matching implementation screenshots to their corresponding Figma design references.
+
+You are provided with ${screenshotCount} SCREENSHOT(S) (images 1-${screenshotCount}) followed by ${figmaCount} FIGMA DESIGN(S) (images ${screenshotCount + 1}-${screenshotCount + figmaCount}).
+
+IMAGE ORDER:
+- Images 1 to ${screenshotCount}: Implementation screenshots (labeled as Screenshot 0 to Screenshot ${screenshotCount - 1})
+- Images ${screenshotCount + 1} to ${screenshotCount + figmaCount}: Figma designs (labeled as Figma 0 to Figma ${figmaCount - 1})
+
+YOUR TASK:
+Analyze the visual content, layout, components, and overall structure of each image to determine which screenshot corresponds to which Figma design.
+
+Consider these factors when matching:
+1. Overall page/screen layout and structure
+2. Key UI components (buttons, forms, headers, navigation)
+3. Color schemes and visual styling
+4. Content areas and their arrangement
+5. Specific UI elements that are unique to each design
+
+IMPORTANT RULES:
+- Each screenshot should match to at most ONE Figma design
+- Each Figma design should match to at most ONE screenshot
+- If a screenshot doesn't match any design well, mark it as unmatched
+- If a Figma design has no matching screenshot, mark it as unmatched
+- Provide confidence scores (0-100) for each match
+
+Respond in this exact JSON format:
+{
+  "matches": [
+    {
+      "screenshotIndex": 0,
+      "figmaIndex": 0,
+      "confidence": 95,
+      "reasoning": "Brief explanation of why these match"
+    }
+  ],
+  "unmatchedScreenshots": [1],
+  "unmatchedFigmaDesigns": [2]
+}
+
+Analyze the images carefully and provide your matching results.`;
+    }
+    /**
+     * Parse the AI response for matching
+     */
+    parseMatchingResponse(response, screenshotCount, figmaCount) {
+        try {
+            const jsonMatch = response.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                // Validate and sanitize the response
+                const matches = [];
+                const usedScreenshots = new Set();
+                const usedFigmas = new Set();
+                for (const match of parsed.matches || []) {
+                    const sIdx = Number(match.screenshotIndex);
+                    const fIdx = Number(match.figmaIndex);
+                    // Validate indices and ensure no duplicates
+                    if (sIdx >= 0 && sIdx < screenshotCount &&
+                        fIdx >= 0 && fIdx < figmaCount &&
+                        !usedScreenshots.has(sIdx) &&
+                        !usedFigmas.has(fIdx)) {
+                        matches.push({
+                            screenshotIndex: sIdx,
+                            figmaIndex: fIdx,
+                            confidence: Math.min(100, Math.max(0, Number(match.confidence) || 50)),
+                            reasoning: match.reasoning || 'Matched by AI analysis',
+                        });
+                        usedScreenshots.add(sIdx);
+                        usedFigmas.add(fIdx);
+                    }
+                }
+                // Find unmatched items
+                const unmatchedScreenshots = [];
+                const unmatchedFigmaDesigns = [];
+                for (let i = 0; i < screenshotCount; i++) {
+                    if (!usedScreenshots.has(i)) {
+                        unmatchedScreenshots.push(i);
+                    }
+                }
+                for (let i = 0; i < figmaCount; i++) {
+                    if (!usedFigmas.has(i)) {
+                        unmatchedFigmaDesigns.push(i);
+                    }
+                }
+                return { matches, unmatchedScreenshots, unmatchedFigmaDesigns };
+            }
+        }
+        catch (error) {
+            console.error('Failed to parse matching response:', error);
+        }
+        return this.createFallbackMatching(screenshotCount, figmaCount);
+    }
+    /**
+     * Create fallback matching (match in order)
+     */
+    createFallbackMatching(screenshotCount, figmaCount) {
+        const matches = [];
+        const minCount = Math.min(screenshotCount, figmaCount);
+        for (let i = 0; i < minCount; i++) {
+            matches.push({
+                screenshotIndex: i,
+                figmaIndex: i,
+                confidence: 50,
+                reasoning: 'Fallback: matched by upload order',
+            });
+        }
+        const unmatchedScreenshots = [];
+        const unmatchedFigmaDesigns = [];
+        for (let i = minCount; i < screenshotCount; i++) {
+            unmatchedScreenshots.push(i);
+        }
+        for (let i = minCount; i < figmaCount; i++) {
+            unmatchedFigmaDesigns.push(i);
+        }
+        return { matches, unmatchedScreenshots, unmatchedFigmaDesigns };
+    }
+    /**
+     * Convert detailed UX validation result to legacy format for backwards compatibility
+     */
+    convertToLegacyFormat(detailedResult) {
+        const issues = [];
+        // Convert missing components
+        for (const comp of detailedResult.reference_components) {
+            if (!comp.found_in_input || comp.issues.missing_component) {
+                issues.push({
+                    severity: 'critical',
+                    category: 'missing_element',
+                    description: `Missing component: ${comp.name} - ${comp.issues.missing_component_note || comp.description}`,
+                    location: comp.description,
+                });
+            }
+            // Add grammar issues
+            for (const grammarIssue of comp.issues.grammar_issues || []) {
+                issues.push({
+                    severity: 'major',
+                    category: 'wrong_content',
+                    description: grammarIssue,
+                    location: comp.name,
+                });
+            }
+            // Add color issues
+            for (const colorIssue of comp.issues.major_color_differences || []) {
+                issues.push({
+                    severity: 'major',
+                    category: 'wrong_style',
+                    description: colorIssue,
+                    location: comp.name,
+                });
+            }
+            // Add typography issues
+            for (const typoIssue of comp.issues.typography_issues || []) {
+                issues.push({
+                    severity: 'minor',
+                    category: 'wrong_style',
+                    description: typoIssue,
+                    location: comp.name,
+                });
+            }
+            // Add missing fields
+            for (const field of comp.issues.missing_fields || []) {
+                issues.push({
+                    severity: 'major',
+                    category: 'missing_element',
+                    description: `Missing field: ${field}`,
+                    location: comp.name,
+                });
+            }
+        }
+        // Convert extra components
+        for (const extra of detailedResult.extra_components_in_input || []) {
+            issues.push({
+                severity: extra.severity === 'major' ? 'major' : 'minor',
+                category: 'extra_element',
+                description: `Extra component not in design: ${extra.name} - ${extra.description}`,
+                location: extra.description,
+            });
+        }
+        // Add overlapping elements
+        for (const overlap of detailedResult.overlapping_elements || []) {
+            issues.push({
+                severity: overlap.severity === 'major' ? 'major' : 'minor',
+                category: 'wrong_position',
+                description: `${overlap.element_name} overlaps with ${overlap.overlaps_with}`,
+                location: overlap.location,
+            });
+        }
+        // Calculate match percentage
+        const summary = detailedResult.summary;
+        const totalComponents = summary.total_reference_components || 1;
+        const matchPercentage = Math.round(((summary.components_found || 0) / totalComponents) * 100);
+        // Generate recommendations
+        const recommendations = [];
+        if (summary.components_missing > 0) {
+            recommendations.push(`Add ${summary.components_missing} missing component(s) from the design`);
+        }
+        if (summary.extra_components_count > 0) {
+            recommendations.push(`Review ${summary.extra_components_count} extra component(s) not in the design`);
+        }
+        if (summary.grammar_issues_count > 0) {
+            recommendations.push(`Fix ${summary.grammar_issues_count} grammar/text issue(s)`);
+        }
+        if (summary.color_issues_count > 0) {
+            recommendations.push(`Fix ${summary.color_issues_count} color difference(s)`);
+        }
+        if (summary.typography_issues_count > 0) {
+            recommendations.push(`Review ${summary.typography_issues_count} typography issue(s)`);
+        }
+        if (summary.overlapping_elements_count > 0) {
+            recommendations.push(`Fix ${summary.overlapping_elements_count} overlapping element(s)`);
+        }
+        return {
+            overallMatch: detailedResult.overall_status,
+            matchPercentage,
+            issues,
+            summary: detailedResult.conclusion,
+            recommendations,
+            detailedResult,
+        };
+    }
+    /**
+     * Invoke the model with text-only prompt
+     */
+    async invokeModel(prompt) {
+        const url = `${this.endpoint}/openai/deployments/${this.deploymentName}/chat/completions?api-version=${this.apiVersion}`;
+        try {
+            const response = await axios_1.default.post(url, {
+                messages: [
+                    {
+                        role: 'user',
+                        content: prompt,
+                    },
+                ],
+                max_tokens: 4000,
+                temperature: 0.2,
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api-key': this.apiKey,
+                },
+            });
+            return response.data.choices?.[0]?.message?.content || '';
+        }
+        catch (error) {
+            console.error('Azure OpenAI API error:', error.response?.data || error.message);
+            throw new Error(`Azure OpenAI API error: ${error.response?.data?.error?.message || error.message}`);
+        }
+    }
+    /**
+     * Invoke the model with images (vision)
+     */
+    async invokeModelWithImages(prompt, images) {
+        const url = `${this.endpoint}/openai/deployments/${this.deploymentName}/chat/completions?api-version=${this.apiVersion}`;
+        const content = [];
+        // Add images first
+        for (const image of images) {
+            content.push({
+                type: 'image_url',
+                image_url: {
+                    url: `data:${image.mediaType};base64,${image.data}`,
+                },
+            });
+        }
+        // Add text prompt
+        content.push({
+            type: 'text',
+            text: prompt,
+        });
+        try {
+            const response = await axios_1.default.post(url, {
+                messages: [
+                    {
+                        role: 'user',
+                        content,
+                    },
+                ],
+                max_tokens: 4000,
+                temperature: 0.2,
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api-key': this.apiKey,
+                },
+            });
+            return response.data.choices?.[0]?.message?.content || '';
+        }
+        catch (error) {
+            console.error('Azure OpenAI API error (vision):', error.response?.data || error.message);
+            throw new Error(`Azure OpenAI API error (vision): ${error.response?.data?.error?.message || error.message}`);
+        }
+    }
+}
+exports.AzureOpenAIClient = AzureOpenAIClient;
+//# sourceMappingURL=client.js.map
+
+/***/ }),
+
 /***/ 9617:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
@@ -51,6 +640,137 @@ class BedrockClient {
             console.error('Failed to initialize Bedrock client:', error);
             throw new Error(`Failed to initialize Bedrock client: ${error}`);
         }
+    }
+    /**
+     * Get the detailed UX validation prompt (ported from ux_validator.py)
+     */
+    getUXValidationPrompt() {
+        const systemPrompt = `You are a UX/UI design quality assurance expert. Your task is to perform a focused comparison between an input image (first image) and a reference Figma design (second image).
+
+FOCUS ON THESE 6 CRITERIA ONLY:
+
+1. COMPONENT COMPARISON (MISSING & EXTRA)
+   - Identify ALL components in the reference Figma image
+   - Verify each reference component exists in the input image - list MISSING components
+   - Also identify any EXTRA components in the input image that are NOT in the reference (e.g., extra buttons, icons, UI elements)
+   - Components include: buttons, icons, headers, text blocks, images, forms, panels, navigation elements, markers, legends, etc.
+
+2. GRAMMAR AND TEXT CORRECTNESS
+   - Check all text in the input image for grammar, spelling, and correctness
+   - Compare text content with the Figma reference
+   - If the Figma reference has incorrect text, mention it clearly
+   - Flag any grammar or spelling errors in the input image
+
+3. MAJOR COLOR DIFFERENCES
+   - Detect MAJOR color differences including:
+     * Background color differences
+     * Component color differences (buttons, panels, etc.)
+     * Text color differences
+   - Ignore minor shade variations
+   - Focus on significant mismatches (e.g., red vs black background, red vs green buttons)
+
+4. FIELD IMPLEMENTATION CHECK
+   - Verify that all fields within components are implemented in the input image
+   - Account for dynamic content that may differ (e.g., WiFi network names, user-specific data, timestamps, MAC addresses)
+   - Check that the structure and presence of fields match, even if values differ
+   - Note if fields are missing or incorrectly implemented
+
+5. TYPOGRAPHY (FONT, STYLE, SIZE)
+   - Check font family, style (bold/italic/regular), and size
+   - Only flag MAJOR differences (e.g., completely different font family, significantly different sizes)
+   - Ignore minor variations (e.g., 1-2px size differences, slight weight variations)
+
+6. OVERLAPPING BUTTONS/ELEMENTS
+   - Check if any buttons overlap with other UI elements
+   - Identify elements that are positioned incorrectly causing overlaps
+   - Note any layout issues that cause elements to overlap
+
+ANALYSIS STEPS:
+
+STEP 1: List all components in the REFERENCE image (buttons, icons, text, panels, markers, etc.)
+STEP 2: For each reference component, check if it exists in the input image
+STEP 3: Scan the INPUT image for any EXTRA components not in the reference
+STEP 4: Check background and overall color scheme differences
+STEP 5: For each component, check grammar, colors, fields, and typography
+STEP 6: Check for overlapping elements
+
+Provide your response in the following JSON format:
+{
+  "reference_components": [
+    {
+      "name": "Component name from reference",
+      "type": "button/header/text/image/icon/marker/panel/etc",
+      "description": "Description of component location and purpose in reference",
+      "found_in_input": true/false,
+      "issues": {
+        "missing_component": true/false,
+        "missing_component_note": "Explanation if component is missing from input",
+        "grammar_issues": ["List of grammar/spelling errors in this component's text"],
+        "text_mismatch": ["List of text differences (note if Figma has errors)"],
+        "major_color_differences": ["List of major color differences"],
+        "missing_fields": ["List of fields that are missing"],
+        "field_notes": "Notes about field implementation (accounting for dynamic content)",
+        "typography_issues": ["List of major typography differences"]
+      },
+      "status": "pass/warning/fail"
+    }
+  ],
+  "extra_components_in_input": [
+    {
+      "name": "Extra component name found in input but NOT in reference",
+      "type": "button/header/text/image/icon/etc",
+      "description": "Description of this extra component and its location",
+      "severity": "minor/major"
+    }
+  ],
+  "global_issues": {
+    "background_color": {
+      "has_difference": true/false,
+      "reference_color": "Color description in reference",
+      "input_color": "Color description in input",
+      "note": "Description of the difference"
+    },
+    "color_issues": ["List of all color-related issues with descriptions"],
+    "grammar_issues": ["List of all grammar/text issues with descriptions"],
+    "typography_issues": ["List of all major typography issues with descriptions"]
+  },
+  "overlapping_elements": [
+    {
+      "element_name": "Name/description of overlapping element",
+      "overlaps_with": "What it overlaps with",
+      "location": "Where the overlap occurs",
+      "severity": "minor/major"
+    }
+  ],
+  "summary": {
+    "total_reference_components": number,
+    "components_found": number,
+    "components_missing": number,
+    "extra_components_count": number,
+    "grammar_issues_count": number,
+    "color_issues_count": number,
+    "typography_issues_count": number,
+    "overlapping_elements_count": number,
+    "total_issues": number
+  },
+  "overall_status": "pass/warning/fail",
+  "conclusion": "Overall assessment focusing on the 6 criteria"
+}
+
+Be THOROUGH. Identify ALL visible components. Don't miss buttons, icons, or UI elements.`;
+        const userPrompt = `Compare the input image (first image) against the reference Figma design (second image).
+
+IMPORTANT: 
+1. List ALL components from the reference and check if each exists in the input
+2. Find any EXTRA components in input that are NOT in the reference (e.g., extra buttons, icons)
+3. Check background color and overall color scheme
+4. Check for grammar/spelling issues in text
+5. Check field implementation (ignore dynamic values like network names, IDs)
+6. Check for major typography differences
+7. Check for overlapping elements
+
+Provide analysis in the requested JSON format.`;
+        return { system: systemPrompt, user: userPrompt };
     }
     /**
      * Extract Figma links from Jira ticket content using LLM
@@ -107,61 +827,25 @@ If no Figma links are found, return empty array for figmaLinks with "low" confid
         };
     }
     /**
-     * Compare a screenshot against a Figma design using vision
+     * Compare a screenshot against a Figma design using vision with detailed UX validation
      */
     async compareUIScreenshot(figmaImageBase64, screenshotBase64, context) {
-        const prompt = `You are a UI/UX QA expert comparing an implementation screenshot against a Figma design.
-
-${context ? `Context: ${context}` : ''}
-
-TASK:
-Compare the SCREENSHOT (second image) against the FIGMA DESIGN (first image) and identify any discrepancies.
-
-Look for:
-1. Missing UI elements (buttons, icons, text, images)
-2. Wrong colors, fonts, or styling
-3. Incorrect spacing, alignment, or positioning
-4. Wrong text content or labels
-5. Extra elements not in the design
-6. Responsive/layout issues
-
-For each issue found, categorize by severity:
-- critical: Major functionality or branding issues
-- major: Noticeable visual differences
-- minor: Small deviations that may be acceptable
-
-Respond in JSON format:
-{
-  "overallMatch": "pass" | "fail" | "warning",
-  "matchPercentage": 0-100,
-  "issues": [
-    {
-      "severity": "critical" | "major" | "minor",
-      "category": "missing_element" | "wrong_style" | "wrong_position" | "wrong_content" | "extra_element",
-      "description": "Clear description of the issue",
-      "location": "Where in the UI this issue appears"
-    }
-  ],
-  "summary": "Brief overall assessment",
-  "recommendations": ["List of suggested fixes"]
-}
-
-Guidelines:
-- "pass": Match is 90%+ with no critical/major issues
-- "warning": Match is 70-90% with only minor issues
-- "fail": Match is below 70% or has critical/major issues`;
-        const response = await this.invokeModelWithImages(prompt, [
-            { data: figmaImageBase64, mediaType: 'image/png' },
+        const { system, user } = this.getUXValidationPrompt();
+        const fullPrompt = `${system}\n\n${context ? `Additional Context: ${context}\n\n` : ''}${user}`;
+        const response = await this.invokeModelWithImages(fullPrompt, [
             { data: screenshotBase64, mediaType: 'image/png' },
+            { data: figmaImageBase64, mediaType: 'image/png' },
         ]);
         try {
             const jsonMatch = response.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
-                return JSON.parse(jsonMatch[0]);
+                const detailedResult = JSON.parse(jsonMatch[0]);
+                // Convert to legacy format for backwards compatibility
+                return this.convertToLegacyFormat(detailedResult);
             }
         }
         catch (error) {
-            // Return a default error response
+            console.error('Failed to parse UX validation response:', error);
             return {
                 overallMatch: 'warning',
                 matchPercentage: 0,
@@ -176,6 +860,267 @@ Guidelines:
             issues: [],
             summary: 'No comparison results generated',
             recommendations: ['Please review manually'],
+        };
+    }
+    /**
+     * Match screenshots to Figma designs using AI vision analysis
+     * This method analyzes all images and determines which screenshot corresponds to which design
+     */
+    async matchScreenshotsToDesigns(screenshots, figmaDesigns) {
+        // If only one of each, just match them directly
+        if (screenshots.length === 1 && figmaDesigns.length === 1) {
+            return {
+                matches: [{
+                        screenshotIndex: 0,
+                        figmaIndex: 0,
+                        confidence: 100,
+                        reasoning: 'Single screenshot matched to single design',
+                    }],
+                unmatchedScreenshots: [],
+                unmatchedFigmaDesigns: [],
+            };
+        }
+        // Build prompt for AI to match images
+        const prompt = this.buildMatchingPrompt(screenshots.length, figmaDesigns.length);
+        // Prepare all images for the AI - first screenshots, then Figma designs
+        const allImages = [];
+        for (let i = 0; i < screenshots.length; i++) {
+            allImages.push({ data: screenshots[i].base64, mediaType: 'image/png' });
+        }
+        for (let i = 0; i < figmaDesigns.length; i++) {
+            allImages.push({ data: figmaDesigns[i].base64, mediaType: 'image/png' });
+        }
+        try {
+            const response = await this.invokeModelWithImages(prompt, allImages);
+            return this.parseMatchingResponse(response, screenshots.length, figmaDesigns.length);
+        }
+        catch (error) {
+            console.error('Failed to match screenshots to designs:', error);
+            // Fallback: match in order
+            return this.createFallbackMatching(screenshots.length, figmaDesigns.length);
+        }
+    }
+    /**
+     * Build the prompt for matching screenshots to designs
+     */
+    buildMatchingPrompt(screenshotCount, figmaCount) {
+        return `You are a UI/UX expert tasked with matching implementation screenshots to their corresponding Figma design references.
+
+You are provided with ${screenshotCount} SCREENSHOT(S) (images 1-${screenshotCount}) followed by ${figmaCount} FIGMA DESIGN(S) (images ${screenshotCount + 1}-${screenshotCount + figmaCount}).
+
+IMAGE ORDER:
+- Images 1 to ${screenshotCount}: Implementation screenshots (labeled as Screenshot 0 to Screenshot ${screenshotCount - 1})
+- Images ${screenshotCount + 1} to ${screenshotCount + figmaCount}: Figma designs (labeled as Figma 0 to Figma ${figmaCount - 1})
+
+YOUR TASK:
+Analyze the visual content, layout, components, and overall structure of each image to determine which screenshot corresponds to which Figma design.
+
+Consider these factors when matching:
+1. Overall page/screen layout and structure
+2. Key UI components (buttons, forms, headers, navigation)
+3. Color schemes and visual styling
+4. Content areas and their arrangement
+5. Specific UI elements that are unique to each design
+
+IMPORTANT RULES:
+- Each screenshot should match to at most ONE Figma design
+- Each Figma design should match to at most ONE screenshot
+- If a screenshot doesn't match any design well, mark it as unmatched
+- If a Figma design has no matching screenshot, mark it as unmatched
+- Provide confidence scores (0-100) for each match
+
+Respond in this exact JSON format:
+{
+  "matches": [
+    {
+      "screenshotIndex": 0,
+      "figmaIndex": 0,
+      "confidence": 95,
+      "reasoning": "Brief explanation of why these match"
+    }
+  ],
+  "unmatchedScreenshots": [1],
+  "unmatchedFigmaDesigns": [2]
+}
+
+Analyze the images carefully and provide your matching results.`;
+    }
+    /**
+     * Parse the AI response for matching
+     */
+    parseMatchingResponse(response, screenshotCount, figmaCount) {
+        try {
+            const jsonMatch = response.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                // Validate and sanitize the response
+                const matches = [];
+                const usedScreenshots = new Set();
+                const usedFigmas = new Set();
+                for (const match of parsed.matches || []) {
+                    const sIdx = Number(match.screenshotIndex);
+                    const fIdx = Number(match.figmaIndex);
+                    // Validate indices and ensure no duplicates
+                    if (sIdx >= 0 && sIdx < screenshotCount &&
+                        fIdx >= 0 && fIdx < figmaCount &&
+                        !usedScreenshots.has(sIdx) &&
+                        !usedFigmas.has(fIdx)) {
+                        matches.push({
+                            screenshotIndex: sIdx,
+                            figmaIndex: fIdx,
+                            confidence: Math.min(100, Math.max(0, Number(match.confidence) || 50)),
+                            reasoning: match.reasoning || 'Matched by AI analysis',
+                        });
+                        usedScreenshots.add(sIdx);
+                        usedFigmas.add(fIdx);
+                    }
+                }
+                // Find unmatched items
+                const unmatchedScreenshots = [];
+                const unmatchedFigmaDesigns = [];
+                for (let i = 0; i < screenshotCount; i++) {
+                    if (!usedScreenshots.has(i)) {
+                        unmatchedScreenshots.push(i);
+                    }
+                }
+                for (let i = 0; i < figmaCount; i++) {
+                    if (!usedFigmas.has(i)) {
+                        unmatchedFigmaDesigns.push(i);
+                    }
+                }
+                return { matches, unmatchedScreenshots, unmatchedFigmaDesigns };
+            }
+        }
+        catch (error) {
+            console.error('Failed to parse matching response:', error);
+        }
+        return this.createFallbackMatching(screenshotCount, figmaCount);
+    }
+    /**
+     * Create fallback matching (match in order)
+     */
+    createFallbackMatching(screenshotCount, figmaCount) {
+        const matches = [];
+        const minCount = Math.min(screenshotCount, figmaCount);
+        for (let i = 0; i < minCount; i++) {
+            matches.push({
+                screenshotIndex: i,
+                figmaIndex: i,
+                confidence: 50,
+                reasoning: 'Fallback: matched by upload order',
+            });
+        }
+        const unmatchedScreenshots = [];
+        const unmatchedFigmaDesigns = [];
+        for (let i = minCount; i < screenshotCount; i++) {
+            unmatchedScreenshots.push(i);
+        }
+        for (let i = minCount; i < figmaCount; i++) {
+            unmatchedFigmaDesigns.push(i);
+        }
+        return { matches, unmatchedScreenshots, unmatchedFigmaDesigns };
+    }
+    /**
+     * Convert detailed UX validation result to legacy format for backwards compatibility
+     */
+    convertToLegacyFormat(detailedResult) {
+        const issues = [];
+        // Convert missing components
+        for (const comp of detailedResult.reference_components) {
+            if (!comp.found_in_input || comp.issues.missing_component) {
+                issues.push({
+                    severity: 'critical',
+                    category: 'missing_element',
+                    description: `Missing component: ${comp.name} - ${comp.issues.missing_component_note || comp.description}`,
+                    location: comp.description,
+                });
+            }
+            // Add grammar issues
+            for (const grammarIssue of comp.issues.grammar_issues || []) {
+                issues.push({
+                    severity: 'major',
+                    category: 'wrong_content',
+                    description: grammarIssue,
+                    location: comp.name,
+                });
+            }
+            // Add color issues
+            for (const colorIssue of comp.issues.major_color_differences || []) {
+                issues.push({
+                    severity: 'major',
+                    category: 'wrong_style',
+                    description: colorIssue,
+                    location: comp.name,
+                });
+            }
+            // Add typography issues
+            for (const typoIssue of comp.issues.typography_issues || []) {
+                issues.push({
+                    severity: 'minor',
+                    category: 'wrong_style',
+                    description: typoIssue,
+                    location: comp.name,
+                });
+            }
+            // Add missing fields
+            for (const field of comp.issues.missing_fields || []) {
+                issues.push({
+                    severity: 'major',
+                    category: 'missing_element',
+                    description: `Missing field: ${field}`,
+                    location: comp.name,
+                });
+            }
+        }
+        // Convert extra components
+        for (const extra of detailedResult.extra_components_in_input || []) {
+            issues.push({
+                severity: extra.severity === 'major' ? 'major' : 'minor',
+                category: 'extra_element',
+                description: `Extra component not in design: ${extra.name} - ${extra.description}`,
+                location: extra.description,
+            });
+        }
+        // Add overlapping elements
+        for (const overlap of detailedResult.overlapping_elements || []) {
+            issues.push({
+                severity: overlap.severity === 'major' ? 'major' : 'minor',
+                category: 'wrong_position',
+                description: `${overlap.element_name} overlaps with ${overlap.overlaps_with}`,
+                location: overlap.location,
+            });
+        }
+        // Calculate match percentage
+        const summary = detailedResult.summary;
+        const totalComponents = summary.total_reference_components || 1;
+        const matchPercentage = Math.round(((summary.components_found || 0) / totalComponents) * 100);
+        // Generate recommendations
+        const recommendations = [];
+        if (summary.components_missing > 0) {
+            recommendations.push(`Add ${summary.components_missing} missing component(s) from the design`);
+        }
+        if (summary.extra_components_count > 0) {
+            recommendations.push(`Review ${summary.extra_components_count} extra component(s) not in the design`);
+        }
+        if (summary.grammar_issues_count > 0) {
+            recommendations.push(`Fix ${summary.grammar_issues_count} grammar/text issue(s)`);
+        }
+        if (summary.color_issues_count > 0) {
+            recommendations.push(`Fix ${summary.color_issues_count} color difference(s)`);
+        }
+        if (summary.typography_issues_count > 0) {
+            recommendations.push(`Review ${summary.typography_issues_count} typography issue(s)`);
+        }
+        if (summary.overlapping_elements_count > 0) {
+            recommendations.push(`Fix ${summary.overlapping_elements_count} overlapping element(s)`);
+        }
+        return {
+            overallMatch: detailedResult.overall_status,
+            matchPercentage,
+            issues,
+            summary: detailedResult.conclusion,
+            recommendations,
+            detailedResult,
         };
     }
     /**
@@ -272,6 +1217,194 @@ exports.BedrockClient = BedrockClient;
 
 /***/ }),
 
+/***/ 192:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.FigmaCache = void 0;
+const fs = __importStar(__nccwpck_require__(9896));
+const path = __importStar(__nccwpck_require__(6928));
+const crypto = __importStar(__nccwpck_require__(6982));
+const DEFAULT_CACHE_DIR = '.figma-cache';
+const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+class FigmaCache {
+    constructor(config = {}) {
+        this.cacheDir = config.cacheDir || DEFAULT_CACHE_DIR;
+        this.ttlMs = config.ttlMs || DEFAULT_TTL_MS;
+        this.ensureCacheDir();
+    }
+    /**
+     * Generate a cache key from a Figma URL
+     */
+    getCacheKey(url) {
+        return crypto.createHash('md5').update(url).digest('hex');
+    }
+    /**
+     * Get the file path for a cache entry
+     */
+    getCachePath(key) {
+        return path.join(this.cacheDir, `${key}.json`);
+    }
+    /**
+     * Ensure the cache directory exists
+     */
+    ensureCacheDir() {
+        try {
+            if (!fs.existsSync(this.cacheDir)) {
+                fs.mkdirSync(this.cacheDir, { recursive: true });
+                console.log(`[FigmaCache] Created cache directory: ${this.cacheDir}`);
+            }
+        }
+        catch (error) {
+            console.warn(`[FigmaCache] Could not create cache directory: ${error}`);
+        }
+    }
+    /**
+     * Check if a cache entry is still valid (not expired)
+     */
+    isValid(entry) {
+        const age = Date.now() - entry.timestamp;
+        return age < this.ttlMs;
+    }
+    /**
+     * Get a cached value for a Figma URL
+     */
+    get(url) {
+        const key = this.getCacheKey(url);
+        const cachePath = this.getCachePath(key);
+        try {
+            if (!fs.existsSync(cachePath)) {
+                return null;
+            }
+            const content = fs.readFileSync(cachePath, 'utf-8');
+            const entry = JSON.parse(content);
+            if (!this.isValid(entry)) {
+                console.log(`[FigmaCache] Cache expired for: ${url}`);
+                this.delete(url);
+                return null;
+            }
+            console.log(`[FigmaCache] Cache hit for: ${url}`);
+            return entry.data;
+        }
+        catch (error) {
+            console.warn(`[FigmaCache] Error reading cache: ${error}`);
+            return null;
+        }
+    }
+    /**
+     * Store a value in the cache for a Figma URL
+     */
+    set(url, data) {
+        const key = this.getCacheKey(url);
+        const cachePath = this.getCachePath(key);
+        const entry = {
+            data,
+            timestamp: Date.now(),
+            url,
+        };
+        try {
+            fs.writeFileSync(cachePath, JSON.stringify(entry, null, 2));
+            console.log(`[FigmaCache] Cached response for: ${url}`);
+        }
+        catch (error) {
+            console.warn(`[FigmaCache] Error writing cache: ${error}`);
+        }
+    }
+    /**
+     * Delete a cache entry
+     */
+    delete(url) {
+        const key = this.getCacheKey(url);
+        const cachePath = this.getCachePath(key);
+        try {
+            if (fs.existsSync(cachePath)) {
+                fs.unlinkSync(cachePath);
+            }
+        }
+        catch (error) {
+            console.warn(`[FigmaCache] Error deleting cache: ${error}`);
+        }
+    }
+    /**
+     * Clear all cache entries
+     */
+    clear() {
+        try {
+            if (fs.existsSync(this.cacheDir)) {
+                const files = fs.readdirSync(this.cacheDir);
+                for (const file of files) {
+                    if (file.endsWith('.json')) {
+                        fs.unlinkSync(path.join(this.cacheDir, file));
+                    }
+                }
+                console.log(`[FigmaCache] Cleared ${files.length} cache entries`);
+            }
+        }
+        catch (error) {
+            console.warn(`[FigmaCache] Error clearing cache: ${error}`);
+        }
+    }
+    /**
+     * Get cache statistics
+     */
+    getStats() {
+        try {
+            if (!fs.existsSync(this.cacheDir)) {
+                return { entries: 0, totalSize: 0 };
+            }
+            const files = fs.readdirSync(this.cacheDir).filter(f => f.endsWith('.json'));
+            let totalSize = 0;
+            for (const file of files) {
+                const stat = fs.statSync(path.join(this.cacheDir, file));
+                totalSize += stat.size;
+            }
+            return { entries: files.length, totalSize };
+        }
+        catch (error) {
+            return { entries: 0, totalSize: 0 };
+        }
+    }
+}
+exports.FigmaCache = FigmaCache;
+//# sourceMappingURL=cache.js.map
+
+/***/ }),
+
 /***/ 7751:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -283,6 +1416,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.FigmaClient = void 0;
 const axios_1 = __importDefault(__nccwpck_require__(7269));
+const cache_1 = __nccwpck_require__(192);
 // Retry configuration
 const MAX_RETRIES = 5;
 const INITIAL_DELAY_MS = 2000; // 2 seconds
@@ -353,9 +1487,15 @@ const MOCK_IMAGE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQ
 class FigmaClient {
     constructor(config) {
         this.useMock = config.useMock || false;
+        this.cache = new cache_1.FigmaCache({
+            cacheDir: config.cacheDir,
+            ttlMs: config.cacheTtlMs,
+        });
         if (this.useMock) {
             console.log('[Figma] 🎭 MOCK MODE ENABLED - No real API calls will be made');
         }
+        const stats = this.cache.getStats();
+        console.log(`[Figma] Cache initialized with ${stats.entries} existing entries`);
         this.client = axios_1.default.create({
             baseURL: 'https://api.figma.com/v1',
             headers: {
@@ -474,6 +1614,7 @@ class FigmaClient {
      * Get images for a Figma URL (convenience method)
      * If a specific node is in the URL, gets that node's image
      * Otherwise, gets the first page/frame
+     * Results are cached to avoid hitting Figma API rate limits
      */
     async getImagesFromUrl(figmaUrl) {
         const fileInfo = FigmaClient.parseFigmaUrl(figmaUrl);
@@ -488,6 +1629,13 @@ class FigmaClient {
                     nodeId: mockNodeId,
                     imageUrl: `mock://figma-image/${fileInfo.fileKey}/${mockNodeId}`,
                 }];
+        }
+        // Check cache first
+        const cacheKey = `images:${figmaUrl}`;
+        const cachedResults = this.cache.get(cacheKey);
+        if (cachedResults) {
+            console.log(`[Figma] Using cached images for: ${figmaUrl}`);
+            return cachedResults;
         }
         let nodeIds;
         if (fileInfo.nodeId) {
@@ -514,6 +1662,8 @@ class FigmaClient {
                 imageUrl,
             });
         }
+        // Cache the results
+        this.cache.set(cacheKey, results);
         return results;
     }
     /**
@@ -744,7 +1894,7 @@ ${figmaListItems}
         return this.postOrUpdateComment(pullNumber, body, marker);
     }
     /**
-     * Post comparison results
+     * Post comparison results with detailed component analysis (similar to ux_validator_ui.py)
      */
     async postComparisonResults(pullNumber, results) {
         const statusEmoji = {
@@ -780,19 +1930,210 @@ ${figmaListItems}
         for (let i = 0; i < results.length; i++) {
             const result = results[i];
             const emoji = statusEmoji[result.overallMatch];
+            const detailed = result.detailedResult;
             body += `<details>\n`;
             body += `<summary>${emoji} Comparison ${i + 1}: ${result.matchPercentage}% match</summary>\n\n`;
             body += `**Figma Design:** ${result.figmaUrl}\n\n`;
             body += `**Summary:** ${result.summary}\n\n`;
-            if (result.issues.length > 0) {
-                body += `#### Issues Found:\n\n`;
-                body += `| Severity | Category | Description | Location |\n`;
-                body += `|----------|----------|-------------|----------|\n`;
-                for (const issue of result.issues) {
-                    const sevEmoji = severityEmoji[issue.severity] || '⚪';
-                    body += `| ${sevEmoji} ${issue.severity} | ${issue.category} | ${issue.description} | ${issue.location} |\n`;
+            // If we have detailed results, show the structured analysis
+            if (detailed) {
+                // Summary metrics (similar to ux_validator_ui.py metrics display)
+                body += `### 📊 Validation Summary\n\n`;
+                body += `| Metric | Value |\n|--------|-------|\n`;
+                body += `| Components Found | ${detailed.summary.components_found}/${detailed.summary.total_reference_components} |\n`;
+                body += `| Missing Components | ${detailed.summary.components_missing} |\n`;
+                body += `| Extra Components | ${detailed.summary.extra_components_count} |\n`;
+                body += `| Grammar Issues | ${detailed.summary.grammar_issues_count} |\n`;
+                body += `| Color Issues | ${detailed.summary.color_issues_count} |\n`;
+                body += `| Typography Issues | ${detailed.summary.typography_issues_count} |\n`;
+                body += `| Overlapping Elements | ${detailed.summary.overlapping_elements_count} |\n`;
+                body += `| **Total Issues** | **${detailed.summary.total_issues}** |\n\n`;
+                // Issue Summary with expandable details (similar to ux_validator_ui.py)
+                body += `### 📋 Issue Summary\n\n`;
+                // Component Issues
+                const componentIssueCount = detailed.summary.components_missing + detailed.summary.extra_components_count;
+                if (componentIssueCount > 0) {
+                    body += `<details>\n<summary>❌ Component Issues: ${componentIssueCount}</summary>\n\n`;
+                    // Missing components
+                    const missingComponents = detailed.reference_components.filter(c => !c.found_in_input);
+                    if (missingComponents.length > 0) {
+                        body += `**Missing from input:**\n`;
+                        for (const comp of missingComponents) {
+                            body += `- ❌ **${comp.name}** (${comp.type}): ${comp.description}\n`;
+                            if (comp.issues.missing_component_note) {
+                                body += `  - ${comp.issues.missing_component_note}\n`;
+                            }
+                        }
+                        body += `\n`;
+                    }
+                    // Extra components
+                    if (detailed.extra_components_in_input.length > 0) {
+                        body += `**Extra in input (not in reference):**\n`;
+                        for (const comp of detailed.extra_components_in_input) {
+                            const sevIcon = comp.severity === 'major' ? '🔴' : '🟡';
+                            body += `- ${sevIcon} **${comp.name}** (${comp.type}): ${comp.description}\n`;
+                        }
+                        body += `\n`;
+                    }
+                    body += `</details>\n\n`;
                 }
-                body += '\n';
+                else {
+                    body += `✅ **Component Issues:** 0\n\n`;
+                }
+                // Grammar Issues
+                const allGrammarIssues = detailed.global_issues.grammar_issues || [];
+                if (allGrammarIssues.length > 0) {
+                    body += `<details>\n<summary>❌ Grammar Issues: ${allGrammarIssues.length}</summary>\n\n`;
+                    for (const issue of allGrammarIssues) {
+                        body += `- ${issue}\n`;
+                    }
+                    body += `\n</details>\n\n`;
+                }
+                else {
+                    body += `✅ **Grammar Issues:** 0\n\n`;
+                }
+                // Color Issues
+                const allColorIssues = detailed.global_issues.color_issues || [];
+                const bgIssue = detailed.global_issues.background_color;
+                if (allColorIssues.length > 0 || bgIssue?.has_difference) {
+                    const colorCount = allColorIssues.length + (bgIssue?.has_difference ? 1 : 0);
+                    body += `<details>\n<summary>⚠️ Color Issues: ${colorCount}</summary>\n\n`;
+                    if (bgIssue?.has_difference) {
+                        body += `**Background Color Difference:**\n`;
+                        body += `- Reference: ${bgIssue.reference_color}\n`;
+                        body += `- Input: ${bgIssue.input_color}\n`;
+                        body += `- Note: ${bgIssue.note}\n\n`;
+                    }
+                    if (allColorIssues.length > 0) {
+                        body += `**Other Color Issues:**\n`;
+                        for (const issue of allColorIssues) {
+                            body += `- ${issue}\n`;
+                        }
+                    }
+                    body += `\n</details>\n\n`;
+                }
+                else {
+                    body += `✅ **Color Issues:** 0\n\n`;
+                }
+                // Typography Issues
+                const allTypoIssues = detailed.global_issues.typography_issues || [];
+                if (allTypoIssues.length > 0) {
+                    body += `<details>\n<summary>⚠️ Typography Issues: ${allTypoIssues.length}</summary>\n\n`;
+                    for (const issue of allTypoIssues) {
+                        body += `- ${issue}\n`;
+                    }
+                    body += `\n</details>\n\n`;
+                }
+                else {
+                    body += `✅ **Typography Issues:** 0\n\n`;
+                }
+                // Overlapping Elements
+                if (detailed.overlapping_elements.length > 0) {
+                    body += `<details>\n<summary>⚠️ Overlapping Elements: ${detailed.overlapping_elements.length}</summary>\n\n`;
+                    for (const overlap of detailed.overlapping_elements) {
+                        const sevIcon = overlap.severity === 'major' ? '🔴' : '🟡';
+                        body += `- ${sevIcon} **${overlap.element_name}** overlaps with **${overlap.overlaps_with}**\n`;
+                        body += `  - Location: ${overlap.location}\n`;
+                    }
+                    body += `\n</details>\n\n`;
+                }
+                // Component-by-Component Analysis (similar to ux_validator_ui.py)
+                body += `### 🔍 Reference Component Analysis\n\n`;
+                body += `<details>\n<summary>Click to expand component-by-component analysis</summary>\n\n`;
+                for (const comp of detailed.reference_components) {
+                    const compStatus = comp.status;
+                    const compIcon = !comp.found_in_input ? '❌' :
+                        compStatus === 'pass' ? '✅' :
+                            compStatus === 'warning' ? '⚠️' : '❌';
+                    const issueCount = (comp.issues.grammar_issues?.length || 0) +
+                        (comp.issues.text_mismatch?.length || 0) +
+                        (comp.issues.major_color_differences?.length || 0) +
+                        (comp.issues.missing_fields?.length || 0) +
+                        (comp.issues.typography_issues?.length || 0) +
+                        (comp.issues.missing_component ? 1 : 0);
+                    const statusText = !comp.found_in_input ? 'MISSING' : `${issueCount} issue(s)`;
+                    body += `<details>\n<summary>${compIcon} <strong>${comp.name}</strong> (${comp.type}) - ${statusText}</summary>\n\n`;
+                    body += `📍 **Description:** ${comp.description}\n\n`;
+                    if (!comp.found_in_input || comp.issues.missing_component) {
+                        body += `❌ **MISSING FROM INPUT**\n`;
+                        if (comp.issues.missing_component_note) {
+                            body += `${comp.issues.missing_component_note}\n`;
+                        }
+                    }
+                    else {
+                        // Grammar & Text Issues
+                        if ((comp.issues.grammar_issues?.length || 0) > 0 || (comp.issues.text_mismatch?.length || 0) > 0) {
+                            body += `**📝 Grammar & Text Issues:**\n`;
+                            for (const issue of comp.issues.grammar_issues || []) {
+                                body += `- ${issue}\n`;
+                            }
+                            for (const mismatch of comp.issues.text_mismatch || []) {
+                                body += `- ${mismatch}\n`;
+                            }
+                            body += `\n`;
+                        }
+                        // Color Issues
+                        if ((comp.issues.major_color_differences?.length || 0) > 0) {
+                            body += `**🎨 Major Color Differences:**\n`;
+                            for (const issue of comp.issues.major_color_differences) {
+                                body += `- ${issue}\n`;
+                            }
+                            body += `\n`;
+                        }
+                        // Missing Fields
+                        if ((comp.issues.missing_fields?.length || 0) > 0) {
+                            body += `**📋 Missing Fields:**\n`;
+                            for (const field of comp.issues.missing_fields) {
+                                body += `- ${field}\n`;
+                            }
+                            body += `\n`;
+                        }
+                        if (comp.issues.field_notes) {
+                            body += `**ℹ️ Field Notes:** ${comp.issues.field_notes}\n\n`;
+                        }
+                        // Typography Issues
+                        if ((comp.issues.typography_issues?.length || 0) > 0) {
+                            body += `**🔤 Typography Issues:**\n`;
+                            for (const issue of comp.issues.typography_issues) {
+                                body += `- ${issue}\n`;
+                            }
+                            body += `\n`;
+                        }
+                        if (issueCount === 0) {
+                            body += `✅ No issues found for this component!\n`;
+                        }
+                    }
+                    body += `\n</details>\n\n`;
+                }
+                body += `</details>\n\n`;
+                // Extra Components Section
+                if (detailed.extra_components_in_input.length > 0) {
+                    body += `### ➕ Extra Components in Input\n\n`;
+                    body += `Components found in the input that are NOT in the Figma reference:\n\n`;
+                    for (const comp of detailed.extra_components_in_input) {
+                        const sevIcon = comp.severity === 'major' ? '🔴' : '🟡';
+                        body += `- ${sevIcon} **${comp.name}** (${comp.type}): ${comp.description}\n`;
+                    }
+                    body += `\n`;
+                }
+                // Conclusion
+                if (detailed.conclusion) {
+                    body += `### 🎯 Conclusion\n\n`;
+                    body += `${detailed.conclusion}\n\n`;
+                }
+            }
+            else {
+                // Fallback to legacy format if no detailed results
+                if (result.issues.length > 0) {
+                    body += `#### Issues Found:\n\n`;
+                    body += `| Severity | Category | Description | Location |\n`;
+                    body += `|----------|----------|-------------|----------|\n`;
+                    for (const issue of result.issues) {
+                        const sevEmoji = severityEmoji[issue.severity] || '⚪';
+                        body += `| ${sevEmoji} ${issue.severity} | ${issue.category} | ${issue.description} | ${issue.location} |\n`;
+                    }
+                    body += '\n';
+                }
             }
             if (result.recommendations.length > 0) {
                 body += `#### Recommendations:\n\n`;
@@ -878,12 +2219,15 @@ const github = __importStar(__nccwpck_require__(3228));
 const client_1 = __nccwpck_require__(2091);
 const client_2 = __nccwpck_require__(7751);
 const client_3 = __nccwpck_require__(9617);
+const client_4 = __nccwpck_require__(9646);
 const pr_handler_1 = __nccwpck_require__(2241);
 const image_utils_1 = __nccwpck_require__(5286);
 function getConfig() {
     const mode = core.getInput('mode', { required: true });
     const figmaMockInput = core.getInput('figma-mock-mode');
     const figmaMockMode = figmaMockInput === 'true' || figmaMockInput === '1';
+    const aiProviderInput = core.getInput('ai-provider') || 'azure';
+    const aiProvider = aiProviderInput;
     const config = {
         mode,
         githubToken: core.getInput('github-token', { required: true }),
@@ -892,13 +2236,19 @@ function getConfig() {
         jiraApiToken: core.getInput('jira-api-token'),
         figmaAccessToken: core.getInput('figma-access-token'),
         figmaMockMode,
-        // Bedrock API Key auth (recommended)
+        // AI Provider
+        aiProvider,
+        // Bedrock config
         bedrockApiKey: core.getInput('bedrock-api-key'),
         bedrockRegion: core.getInput('bedrock-region') || 'us-east-1',
         bedrockModelId: core.getInput('bedrock-model-id') || 'us.anthropic.claude-sonnet-4-20250514-v1:0',
-        // Legacy AWS credentials auth
         awsAccessKeyId: core.getInput('aws-access-key-id'),
         awsSecretAccessKey: core.getInput('aws-secret-access-key'),
+        // Azure OpenAI config
+        azureOpenAIApiKey: core.getInput('azure-openai-api-key'),
+        azureOpenAIEndpoint: core.getInput('azure-openai-endpoint'),
+        azureOpenAIDeployment: core.getInput('azure-openai-deployment'),
+        azureOpenAIApiVersion: core.getInput('azure-openai-api-version') || '2024-12-01-preview',
     };
     const prNumber = core.getInput('pr-number');
     if (prNumber) {
@@ -918,6 +2268,32 @@ function getConfig() {
         }
     }
     return config;
+}
+/**
+ * Create AI client based on provider configuration
+ */
+function createAIClient(config) {
+    if (config.aiProvider === 'azure') {
+        if (!config.azureOpenAIApiKey || !config.azureOpenAIEndpoint || !config.azureOpenAIDeployment) {
+            throw new Error('Azure OpenAI requires azure-openai-api-key, azure-openai-endpoint, and azure-openai-deployment');
+        }
+        core.info('Using Azure OpenAI as AI provider');
+        return new client_4.AzureOpenAIClient({
+            apiKey: config.azureOpenAIApiKey,
+            endpoint: config.azureOpenAIEndpoint,
+            deploymentName: config.azureOpenAIDeployment,
+            apiVersion: config.azureOpenAIApiVersion,
+        });
+    }
+    // Default to Bedrock
+    core.info('Using AWS Bedrock as AI provider');
+    return new client_3.BedrockClient({
+        apiKey: config.bedrockApiKey,
+        region: config.bedrockRegion || 'us-east-1',
+        modelId: config.bedrockModelId,
+        accessKeyId: config.awsAccessKeyId,
+        secretAccessKey: config.awsSecretAccessKey,
+    });
 }
 /**
  * Mode: detect
@@ -964,13 +2340,7 @@ async function runDetectMode(config) {
         email: config.jiraEmail,
         apiToken: config.jiraApiToken,
     });
-    const bedrockClient = new client_3.BedrockClient({
-        apiKey: config.bedrockApiKey,
-        region: config.bedrockRegion || 'us-east-1',
-        modelId: config.bedrockModelId,
-        accessKeyId: config.awsAccessKeyId,
-        secretAccessKey: config.awsSecretAccessKey,
-    });
+    const aiClient = createAIClient(config);
     // Extract issue keys and fetch content
     const allFigmaLinks = [];
     let jiraTicketKey = '';
@@ -990,7 +2360,7 @@ async function runDetectMode(config) {
             core.info(`=== JIRA TICKET CONTENT END ===`);
             // Use LLM to extract Figma links
             core.info('Using LLM to extract Figma links...');
-            const extractionResult = await bedrockClient.extractFigmaLinks(ticketContent.fullText);
+            const extractionResult = await aiClient.extractFigmaLinks(ticketContent.fullText);
             core.info(`Extraction result: ${JSON.stringify(extractionResult)}`);
             if (extractionResult.figmaLinks.length > 0) {
                 // Validate each link
@@ -1069,13 +2439,7 @@ async function runAnalyzeMode(config) {
         accessToken: config.figmaAccessToken,
         useMock: config.figmaMockMode,
     });
-    const bedrockClient = new client_3.BedrockClient({
-        apiKey: config.bedrockApiKey,
-        region: config.bedrockRegion || 'us-east-1',
-        modelId: config.bedrockModelId,
-        accessKeyId: config.awsAccessKeyId,
-        secretAccessKey: config.awsSecretAccessKey,
-    });
+    const aiClient = createAIClient(config);
     // Get PR info and find Figma links
     const prInfo = await prHandler.getPRInfo(pullNumber);
     const jiraUrls = client_1.JiraClient.findJiraUrls(prInfo.body);
@@ -1094,7 +2458,7 @@ async function runAnalyzeMode(config) {
             core.info(`=== JIRA TICKET CONTENT START (${issueKey}) ===`);
             core.info(ticketContent.fullText);
             core.info(`=== JIRA TICKET CONTENT END ===`);
-            const extractionResult = await bedrockClient.extractFigmaLinks(ticketContent.fullText);
+            const extractionResult = await aiClient.extractFigmaLinks(ticketContent.fullText);
             for (const link of extractionResult.figmaLinks) {
                 if (client_2.FigmaClient.isFigmaUrl(link)) {
                     figmaLinks.push(link);
@@ -1110,19 +2474,20 @@ async function runAnalyzeMode(config) {
         core.info('No Figma links found, skipping analysis');
         return;
     }
-    // Get screenshots from the comment
-    const comments = await prHandler.findScreenshotComments(pullNumber);
-    // Find the triggering comment if specified
+    // Get all comments and filter for ones with "qa!" and screenshots
+    const allComments = await prHandler.getPRComments(pullNumber);
+    const qaCommentsWithScreenshots = allComments
+        .filter(c => c.body.toLowerCase().includes('qa!') && c.imageUrls.length > 0)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     let screenshotUrls = [];
-    if (config.commentId) {
-        const triggerComment = comments.find(c => c.id === config.commentId);
-        if (triggerComment) {
-            screenshotUrls = triggerComment.imageUrls;
+    if (qaCommentsWithScreenshots.length > 0) {
+        // Take only the most recent "qa!" comment with screenshots
+        const latestComment = qaCommentsWithScreenshots[0];
+        screenshotUrls = latestComment.imageUrls;
+        core.info(`Using screenshots from the latest qa! comment (ID: ${latestComment.id}, created: ${latestComment.createdAt})`);
+        if (qaCommentsWithScreenshots.length > 1) {
+            core.info(`Note: Found ${qaCommentsWithScreenshots.length} qa! comments with screenshots, using only the most recent one`);
         }
-    }
-    else {
-        // Get all screenshots from all comments
-        screenshotUrls = comments.flatMap(c => c.imageUrls);
     }
     if (screenshotUrls.length === 0) {
         core.info('No screenshots found in comment(s)');
@@ -1167,20 +2532,54 @@ async function runAnalyzeMode(config) {
         core.warning('Could not fetch any Figma images');
         return;
     }
-    // Compare each screenshot against Figma designs
+    // Download all screenshots first
+    core.info('Downloading screenshots...');
+    const screenshots = [];
+    for (const url of screenshotUrls) {
+        const base64 = await (0, image_utils_1.downloadImageAsBase64)(url);
+        screenshots.push({ url, base64 });
+    }
+    // Prepare Figma designs array
+    const figmaDesigns = figmaImages.map(img => ({
+        url: img.url,
+        base64: img.imageBase64,
+    }));
+    // Use AI to intelligently match screenshots to Figma designs
+    core.info('🔍 Using AI to match screenshots to Figma designs...');
+    const matchResult = await aiClient.matchScreenshotsToDesigns(screenshots, figmaDesigns);
+    core.info(`AI Matching Results:`);
+    core.info(`  - ${matchResult.matches.length} matched pair(s)`);
+    if (matchResult.unmatchedScreenshots.length > 0) {
+        core.info(`  - ${matchResult.unmatchedScreenshots.length} unmatched screenshot(s): indices ${matchResult.unmatchedScreenshots.join(', ')}`);
+    }
+    if (matchResult.unmatchedFigmaDesigns.length > 0) {
+        core.info(`  - ${matchResult.unmatchedFigmaDesigns.length} unmatched Figma design(s): indices ${matchResult.unmatchedFigmaDesigns.join(', ')}`);
+    }
+    for (const match of matchResult.matches) {
+        core.info(`  - Screenshot ${match.screenshotIndex} → Figma ${match.figmaIndex} (confidence: ${match.confidence}%)`);
+        core.info(`    Reason: ${match.reasoning}`);
+    }
+    // Compare only the matched pairs
     const results = [];
-    for (const screenshotUrl of screenshotUrls) {
-        const screenshotBase64 = await (0, image_utils_1.downloadImageAsBase64)(screenshotUrl);
-        // Compare against each Figma image (or just the first one for simplicity)
-        for (const figmaImage of figmaImages) {
-            core.info(`Comparing screenshot against Figma design...`);
-            const comparisonResult = await bedrockClient.compareUIScreenshot(figmaImage.imageBase64, screenshotBase64, `Comparing implementation screenshot against Figma design from ${figmaImage.url}`);
-            results.push({
-                figmaUrl: figmaImage.url,
-                screenshotUrl,
-                ...comparisonResult,
-            });
-        }
+    for (const match of matchResult.matches) {
+        const screenshot = screenshots[match.screenshotIndex];
+        const figmaDesign = figmaDesigns[match.figmaIndex];
+        core.info(`Comparing screenshot ${match.screenshotIndex} against Figma design ${match.figmaIndex}...`);
+        const comparisonResult = await aiClient.compareUIScreenshot(figmaDesign.base64, screenshot.base64, `Comparing implementation screenshot against Figma design from ${figmaDesign.url}`);
+        results.push({
+            figmaUrl: figmaDesign.url,
+            screenshotUrl: screenshot.url,
+            ...comparisonResult,
+            matchConfidence: match.confidence,
+            matchReasoning: match.reasoning,
+        });
+    }
+    // Add warnings for unmatched items
+    for (const unmatchedIdx of matchResult.unmatchedScreenshots) {
+        core.warning(`Screenshot ${unmatchedIdx} (${screenshots[unmatchedIdx].url}) could not be matched to any Figma design`);
+    }
+    for (const unmatchedIdx of matchResult.unmatchedFigmaDesigns) {
+        core.warning(`Figma design ${unmatchedIdx} (${figmaDesigns[unmatchedIdx].url}) has no matching screenshot`);
     }
     // Post results to GitHub PR
     await prHandler.postComparisonResults(pullNumber, results);
@@ -1249,11 +2648,24 @@ Summary:
     for (let i = 0; i < results.length; i++) {
         const result = results[i];
         const statusEmoji = result.overallMatch === 'pass' ? '✅' : result.overallMatch === 'warning' ? '⚠️' : '❌';
+        const detailed = result.detailedResult;
         comment += `--- Comparison ${i + 1} ---
 Status: ${statusEmoji} ${result.matchPercentage}% match
 Figma: ${result.figmaUrl}
 Summary: ${result.summary}
 `;
+        // Add detailed summary if available
+        if (detailed?.summary) {
+            comment += `
+Components: ${detailed.summary.components_found}/${detailed.summary.total_reference_components} found
+Missing: ${detailed.summary.components_missing}
+Extra: ${detailed.summary.extra_components_count}
+Grammar Issues: ${detailed.summary.grammar_issues_count}
+Color Issues: ${detailed.summary.color_issues_count}
+Typography Issues: ${detailed.summary.typography_issues_count}
+Overlapping Elements: ${detailed.summary.overlapping_elements_count}
+`;
+        }
         if (result.issues.length > 0) {
             comment += `\nIssues:\n`;
             for (const issue of result.issues) {
@@ -1277,6 +2689,7 @@ async function run() {
     try {
         const config = getConfig();
         core.info(`Running UI QA Agent in ${config.mode} mode`);
+        core.info(`AI Provider: ${config.aiProvider}`);
         switch (config.mode) {
             case 'detect':
                 await runDetectMode(config);

@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FigmaClient = void 0;
 const axios_1 = __importDefault(require("axios"));
+const cache_1 = require("./cache");
 // Retry configuration
 const MAX_RETRIES = 5;
 const INITIAL_DELAY_MS = 2000; // 2 seconds
@@ -75,9 +76,15 @@ const MOCK_IMAGE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQ
 class FigmaClient {
     constructor(config) {
         this.useMock = config.useMock || false;
+        this.cache = new cache_1.FigmaCache({
+            cacheDir: config.cacheDir,
+            ttlMs: config.cacheTtlMs,
+        });
         if (this.useMock) {
             console.log('[Figma] 🎭 MOCK MODE ENABLED - No real API calls will be made');
         }
+        const stats = this.cache.getStats();
+        console.log(`[Figma] Cache initialized with ${stats.entries} existing entries`);
         this.client = axios_1.default.create({
             baseURL: 'https://api.figma.com/v1',
             headers: {
@@ -196,6 +203,7 @@ class FigmaClient {
      * Get images for a Figma URL (convenience method)
      * If a specific node is in the URL, gets that node's image
      * Otherwise, gets the first page/frame
+     * Results are cached to avoid hitting Figma API rate limits
      */
     async getImagesFromUrl(figmaUrl) {
         const fileInfo = FigmaClient.parseFigmaUrl(figmaUrl);
@@ -210,6 +218,13 @@ class FigmaClient {
                     nodeId: mockNodeId,
                     imageUrl: `mock://figma-image/${fileInfo.fileKey}/${mockNodeId}`,
                 }];
+        }
+        // Check cache first
+        const cacheKey = `images:${figmaUrl}`;
+        const cachedResults = this.cache.get(cacheKey);
+        if (cachedResults) {
+            console.log(`[Figma] Using cached images for: ${figmaUrl}`);
+            return cachedResults;
         }
         let nodeIds;
         if (fileInfo.nodeId) {
@@ -236,6 +251,8 @@ class FigmaClient {
                 imageUrl,
             });
         }
+        // Cache the results
+        this.cache.set(cacheKey, results);
         return results;
     }
     /**

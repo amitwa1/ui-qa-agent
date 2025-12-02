@@ -38,12 +38,15 @@ const github = __importStar(require("@actions/github"));
 const client_1 = require("./jira/client");
 const client_2 = require("./figma/client");
 const client_3 = require("./bedrock/client");
+const client_4 = require("./azure/client");
 const pr_handler_1 = require("./github/pr-handler");
 const image_utils_1 = require("./utils/image-utils");
 function getConfig() {
     const mode = core.getInput('mode', { required: true });
     const figmaMockInput = core.getInput('figma-mock-mode');
     const figmaMockMode = figmaMockInput === 'true' || figmaMockInput === '1';
+    const aiProviderInput = core.getInput('ai-provider') || 'azure';
+    const aiProvider = aiProviderInput;
     const config = {
         mode,
         githubToken: core.getInput('github-token', { required: true }),
@@ -52,13 +55,19 @@ function getConfig() {
         jiraApiToken: core.getInput('jira-api-token'),
         figmaAccessToken: core.getInput('figma-access-token'),
         figmaMockMode,
-        // Bedrock API Key auth (recommended)
+        // AI Provider
+        aiProvider,
+        // Bedrock config
         bedrockApiKey: core.getInput('bedrock-api-key'),
         bedrockRegion: core.getInput('bedrock-region') || 'us-east-1',
         bedrockModelId: core.getInput('bedrock-model-id') || 'us.anthropic.claude-sonnet-4-20250514-v1:0',
-        // Legacy AWS credentials auth
         awsAccessKeyId: core.getInput('aws-access-key-id'),
         awsSecretAccessKey: core.getInput('aws-secret-access-key'),
+        // Azure OpenAI config
+        azureOpenAIApiKey: core.getInput('azure-openai-api-key'),
+        azureOpenAIEndpoint: core.getInput('azure-openai-endpoint'),
+        azureOpenAIDeployment: core.getInput('azure-openai-deployment'),
+        azureOpenAIApiVersion: core.getInput('azure-openai-api-version') || '2024-12-01-preview',
     };
     const prNumber = core.getInput('pr-number');
     if (prNumber) {
@@ -78,6 +87,32 @@ function getConfig() {
         }
     }
     return config;
+}
+/**
+ * Create AI client based on provider configuration
+ */
+function createAIClient(config) {
+    if (config.aiProvider === 'azure') {
+        if (!config.azureOpenAIApiKey || !config.azureOpenAIEndpoint || !config.azureOpenAIDeployment) {
+            throw new Error('Azure OpenAI requires azure-openai-api-key, azure-openai-endpoint, and azure-openai-deployment');
+        }
+        core.info('Using Azure OpenAI as AI provider');
+        return new client_4.AzureOpenAIClient({
+            apiKey: config.azureOpenAIApiKey,
+            endpoint: config.azureOpenAIEndpoint,
+            deploymentName: config.azureOpenAIDeployment,
+            apiVersion: config.azureOpenAIApiVersion,
+        });
+    }
+    // Default to Bedrock
+    core.info('Using AWS Bedrock as AI provider');
+    return new client_3.BedrockClient({
+        apiKey: config.bedrockApiKey,
+        region: config.bedrockRegion || 'us-east-1',
+        modelId: config.bedrockModelId,
+        accessKeyId: config.awsAccessKeyId,
+        secretAccessKey: config.awsSecretAccessKey,
+    });
 }
 /**
  * Mode: detect
@@ -124,13 +159,7 @@ async function runDetectMode(config) {
         email: config.jiraEmail,
         apiToken: config.jiraApiToken,
     });
-    const bedrockClient = new client_3.BedrockClient({
-        apiKey: config.bedrockApiKey,
-        region: config.bedrockRegion || 'us-east-1',
-        modelId: config.bedrockModelId,
-        accessKeyId: config.awsAccessKeyId,
-        secretAccessKey: config.awsSecretAccessKey,
-    });
+    const aiClient = createAIClient(config);
     // Extract issue keys and fetch content
     const allFigmaLinks = [];
     let jiraTicketKey = '';
@@ -150,7 +179,7 @@ async function runDetectMode(config) {
             core.info(`=== JIRA TICKET CONTENT END ===`);
             // Use LLM to extract Figma links
             core.info('Using LLM to extract Figma links...');
-            const extractionResult = await bedrockClient.extractFigmaLinks(ticketContent.fullText);
+            const extractionResult = await aiClient.extractFigmaLinks(ticketContent.fullText);
             core.info(`Extraction result: ${JSON.stringify(extractionResult)}`);
             if (extractionResult.figmaLinks.length > 0) {
                 // Validate each link
@@ -229,13 +258,7 @@ async function runAnalyzeMode(config) {
         accessToken: config.figmaAccessToken,
         useMock: config.figmaMockMode,
     });
-    const bedrockClient = new client_3.BedrockClient({
-        apiKey: config.bedrockApiKey,
-        region: config.bedrockRegion || 'us-east-1',
-        modelId: config.bedrockModelId,
-        accessKeyId: config.awsAccessKeyId,
-        secretAccessKey: config.awsSecretAccessKey,
-    });
+    const aiClient = createAIClient(config);
     // Get PR info and find Figma links
     const prInfo = await prHandler.getPRInfo(pullNumber);
     const jiraUrls = client_1.JiraClient.findJiraUrls(prInfo.body);
@@ -254,7 +277,7 @@ async function runAnalyzeMode(config) {
             core.info(`=== JIRA TICKET CONTENT START (${issueKey}) ===`);
             core.info(ticketContent.fullText);
             core.info(`=== JIRA TICKET CONTENT END ===`);
-            const extractionResult = await bedrockClient.extractFigmaLinks(ticketContent.fullText);
+            const extractionResult = await aiClient.extractFigmaLinks(ticketContent.fullText);
             for (const link of extractionResult.figmaLinks) {
                 if (client_2.FigmaClient.isFigmaUrl(link)) {
                     figmaLinks.push(link);
@@ -270,19 +293,20 @@ async function runAnalyzeMode(config) {
         core.info('No Figma links found, skipping analysis');
         return;
     }
-    // Get screenshots from the comment
-    const comments = await prHandler.findScreenshotComments(pullNumber);
-    // Find the triggering comment if specified
+    // Get all comments and filter for ones with "qa!" and screenshots
+    const allComments = await prHandler.getPRComments(pullNumber);
+    const qaCommentsWithScreenshots = allComments
+        .filter(c => c.body.toLowerCase().includes('qa!') && c.imageUrls.length > 0)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     let screenshotUrls = [];
-    if (config.commentId) {
-        const triggerComment = comments.find(c => c.id === config.commentId);
-        if (triggerComment) {
-            screenshotUrls = triggerComment.imageUrls;
+    if (qaCommentsWithScreenshots.length > 0) {
+        // Take only the most recent "qa!" comment with screenshots
+        const latestComment = qaCommentsWithScreenshots[0];
+        screenshotUrls = latestComment.imageUrls;
+        core.info(`Using screenshots from the latest qa! comment (ID: ${latestComment.id}, created: ${latestComment.createdAt})`);
+        if (qaCommentsWithScreenshots.length > 1) {
+            core.info(`Note: Found ${qaCommentsWithScreenshots.length} qa! comments with screenshots, using only the most recent one`);
         }
-    }
-    else {
-        // Get all screenshots from all comments
-        screenshotUrls = comments.flatMap(c => c.imageUrls);
     }
     if (screenshotUrls.length === 0) {
         core.info('No screenshots found in comment(s)');
@@ -327,20 +351,54 @@ async function runAnalyzeMode(config) {
         core.warning('Could not fetch any Figma images');
         return;
     }
-    // Compare each screenshot against Figma designs
+    // Download all screenshots first
+    core.info('Downloading screenshots...');
+    const screenshots = [];
+    for (const url of screenshotUrls) {
+        const base64 = await (0, image_utils_1.downloadImageAsBase64)(url);
+        screenshots.push({ url, base64 });
+    }
+    // Prepare Figma designs array
+    const figmaDesigns = figmaImages.map(img => ({
+        url: img.url,
+        base64: img.imageBase64,
+    }));
+    // Use AI to intelligently match screenshots to Figma designs
+    core.info('🔍 Using AI to match screenshots to Figma designs...');
+    const matchResult = await aiClient.matchScreenshotsToDesigns(screenshots, figmaDesigns);
+    core.info(`AI Matching Results:`);
+    core.info(`  - ${matchResult.matches.length} matched pair(s)`);
+    if (matchResult.unmatchedScreenshots.length > 0) {
+        core.info(`  - ${matchResult.unmatchedScreenshots.length} unmatched screenshot(s): indices ${matchResult.unmatchedScreenshots.join(', ')}`);
+    }
+    if (matchResult.unmatchedFigmaDesigns.length > 0) {
+        core.info(`  - ${matchResult.unmatchedFigmaDesigns.length} unmatched Figma design(s): indices ${matchResult.unmatchedFigmaDesigns.join(', ')}`);
+    }
+    for (const match of matchResult.matches) {
+        core.info(`  - Screenshot ${match.screenshotIndex} → Figma ${match.figmaIndex} (confidence: ${match.confidence}%)`);
+        core.info(`    Reason: ${match.reasoning}`);
+    }
+    // Compare only the matched pairs
     const results = [];
-    for (const screenshotUrl of screenshotUrls) {
-        const screenshotBase64 = await (0, image_utils_1.downloadImageAsBase64)(screenshotUrl);
-        // Compare against each Figma image (or just the first one for simplicity)
-        for (const figmaImage of figmaImages) {
-            core.info(`Comparing screenshot against Figma design...`);
-            const comparisonResult = await bedrockClient.compareUIScreenshot(figmaImage.imageBase64, screenshotBase64, `Comparing implementation screenshot against Figma design from ${figmaImage.url}`);
-            results.push({
-                figmaUrl: figmaImage.url,
-                screenshotUrl,
-                ...comparisonResult,
-            });
-        }
+    for (const match of matchResult.matches) {
+        const screenshot = screenshots[match.screenshotIndex];
+        const figmaDesign = figmaDesigns[match.figmaIndex];
+        core.info(`Comparing screenshot ${match.screenshotIndex} against Figma design ${match.figmaIndex}...`);
+        const comparisonResult = await aiClient.compareUIScreenshot(figmaDesign.base64, screenshot.base64, `Comparing implementation screenshot against Figma design from ${figmaDesign.url}`);
+        results.push({
+            figmaUrl: figmaDesign.url,
+            screenshotUrl: screenshot.url,
+            ...comparisonResult,
+            matchConfidence: match.confidence,
+            matchReasoning: match.reasoning,
+        });
+    }
+    // Add warnings for unmatched items
+    for (const unmatchedIdx of matchResult.unmatchedScreenshots) {
+        core.warning(`Screenshot ${unmatchedIdx} (${screenshots[unmatchedIdx].url}) could not be matched to any Figma design`);
+    }
+    for (const unmatchedIdx of matchResult.unmatchedFigmaDesigns) {
+        core.warning(`Figma design ${unmatchedIdx} (${figmaDesigns[unmatchedIdx].url}) has no matching screenshot`);
     }
     // Post results to GitHub PR
     await prHandler.postComparisonResults(pullNumber, results);
@@ -409,11 +467,24 @@ Summary:
     for (let i = 0; i < results.length; i++) {
         const result = results[i];
         const statusEmoji = result.overallMatch === 'pass' ? '✅' : result.overallMatch === 'warning' ? '⚠️' : '❌';
+        const detailed = result.detailedResult;
         comment += `--- Comparison ${i + 1} ---
 Status: ${statusEmoji} ${result.matchPercentage}% match
 Figma: ${result.figmaUrl}
 Summary: ${result.summary}
 `;
+        // Add detailed summary if available
+        if (detailed?.summary) {
+            comment += `
+Components: ${detailed.summary.components_found}/${detailed.summary.total_reference_components} found
+Missing: ${detailed.summary.components_missing}
+Extra: ${detailed.summary.extra_components_count}
+Grammar Issues: ${detailed.summary.grammar_issues_count}
+Color Issues: ${detailed.summary.color_issues_count}
+Typography Issues: ${detailed.summary.typography_issues_count}
+Overlapping Elements: ${detailed.summary.overlapping_elements_count}
+`;
+        }
         if (result.issues.length > 0) {
             comment += `\nIssues:\n`;
             for (const issue of result.issues) {
@@ -437,6 +508,7 @@ async function run() {
     try {
         const config = getConfig();
         core.info(`Running UI QA Agent in ${config.mode} mode`);
+        core.info(`AI Provider: ${config.aiProvider}`);
         switch (config.mode) {
             case 'detect':
                 await runDetectMode(config);

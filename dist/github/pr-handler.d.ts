@@ -1,3 +1,4 @@
+import { UXValidationResult } from '../bedrock/client';
 export interface PRInfo {
     owner: string;
     repo: string;
@@ -63,7 +64,7 @@ export declare class PRHandler {
      */
     requestScreenshots(pullNumber: number, figmaLinks: string[]): Promise<number>;
     /**
-     * Post comparison results
+     * Post comparison results with detailed component analysis (similar to ux_validator_ui.py)
      */
     postComparisonResults(pullNumber: number, results: Array<{
         figmaUrl: string;
@@ -78,6 +79,7 @@ export declare class PRHandler {
             location: string;
         }>;
         recommendations: string[];
+        detailedResult?: UXValidationResult;
     }>): Promise<number>;
     /**
      * Download an image from a URL and return as base64
