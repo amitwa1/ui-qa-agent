@@ -697,7 +697,7 @@ Analyze the images carefully and provide your matching results.`;
               content: prompt,
             },
           ],
-          max_tokens: 4000,
+          max_completion_tokens: 4000,
           temperature: 0.2,
         },
         {
@@ -711,7 +711,7 @@ Analyze the images carefully and provide your matching results.`;
       return response.data.choices?.[0]?.message?.content || '';
     } catch (error: any) {
       console.error('Azure OpenAI API error:', error.response?.data || error.message);
-      throw new Error(`Azure OpenAI API error: ${error.response?.data?.error?.message || error.message}`);
+      throw new Error(`Azure OpenAI API error: ${JSON.stringify(error.response?.data?.error) || error.message}`);
     }
   }
 
@@ -752,7 +752,7 @@ Analyze the images carefully and provide your matching results.`;
               content,
             },
           ],
-          max_tokens: 4000,
+          max_completion_tokens: 4000,
           temperature: 0.2,
         },
         {
@@ -766,7 +766,7 @@ Analyze the images carefully and provide your matching results.`;
       return response.data.choices?.[0]?.message?.content || '';
     } catch (error: any) {
       console.error('Azure OpenAI API error (vision):', error.response?.data || error.message);
-      throw new Error(`Azure OpenAI API error (vision): ${error.response?.data?.error?.message || error.message}`);
+      throw new Error(`Azure OpenAI API error (vision): ${JSON.stringify(error.response?.data?.error) || error.message}`);
     }
   }
 }
