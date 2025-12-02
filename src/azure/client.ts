@@ -1,19 +1,14 @@
 /**
- * AWS Bedrock client for LLM operations
+ * Azure OpenAI client for LLM operations
  */
 
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import axios from 'axios';
 
-export interface BedrockConfig {
-  // API Key authentication (July 2025 feature)
-  apiKey?: string;
-  region: string;
-  modelId?: string;
-  anthropicVersion?: string;
-  
-  // Legacy AWS credentials authentication
-  accessKeyId?: string;
-  secretAccessKey?: string;
+export interface AzureOpenAIConfig {
+  apiKey: string;
+  endpoint: string;
+  deploymentName: string;
+  apiVersion?: string;
 }
 
 export interface FigmaLinkExtractionResult {
@@ -93,17 +88,16 @@ export interface UXValidationResult {
   conclusion: string;
 }
 
-export interface UIComparisonIssue {
-  severity: 'critical' | 'major' | 'minor';
-  category: 'missing_element' | 'wrong_style' | 'wrong_position' | 'wrong_content' | 'extra_element';
-  description: string;
-  location: string;
-}
-
+// Legacy interface for backwards compatibility
 export interface UIComparisonResult {
   overallMatch: 'pass' | 'fail' | 'warning';
   matchPercentage: number;
-  issues: UIComparisonIssue[];
+  issues: Array<{
+    severity: 'critical' | 'major' | 'minor';
+    category: 'missing_element' | 'wrong_style' | 'wrong_position' | 'wrong_content' | 'extra_element';
+    description: string;
+    location: string;
+  }>;
   summary: string;
   recommendations: string[];
   // Extended result from detailed validation
@@ -124,51 +118,29 @@ export interface ScreenshotMatchResult {
   unmatchedFigmaDesigns: number[];
 }
 
-export class BedrockClient {
-  private client: BedrockRuntimeClient;
-  private modelId: string;
-  private anthropicVersion: string;
+export class AzureOpenAIClient {
+  private apiKey: string;
+  private endpoint: string;
+  private deploymentName: string;
+  private apiVersion: string;
 
-  constructor(config: BedrockConfig) {
-    this.modelId = config.modelId || 'us.anthropic.claude-sonnet-4-20250514-v1:0';
-    this.anthropicVersion = config.anthropicVersion || 'bedrock-2023-05-31';
-
-    // Validate region
-    if (!config.region) {
-      throw new Error('AWS Bedrock region is required');
+  constructor(config: AzureOpenAIConfig) {
+    if (!config.apiKey) {
+      throw new Error('Azure OpenAI API key is required');
+    }
+    if (!config.endpoint) {
+      throw new Error('Azure OpenAI endpoint is required');
+    }
+    if (!config.deploymentName) {
+      throw new Error('Azure OpenAI deployment name is required');
     }
 
-    // Initialize client config
-    const clientConfig: Record<string, unknown> = { region: config.region };
+    this.apiKey = config.apiKey;
+    this.endpoint = config.endpoint.replace(/\/$/, ''); // Remove trailing slash
+    this.deploymentName = config.deploymentName;
+    this.apiVersion = config.apiVersion || '2024-12-01-preview';
 
-    // Priority: API Key > Access Keys > Default credential chain
-    if (config.apiKey) {
-      console.log('Using AWS Bedrock API Key for authentication (July 2025 feature)');
-      // Set the API key as AWS_BEARER_TOKEN_BEDROCK environment variable
-      // This is the correct way to use Bedrock API keys according to AWS documentation
-      process.env.AWS_BEARER_TOKEN_BEDROCK = config.apiKey;
-      console.log('Set AWS_BEARER_TOKEN_BEDROCK environment variable for Bedrock authentication');
-      // Don't set any credentials - let AWS SDK use the bearer token
-    } else if (config.accessKeyId && config.secretAccessKey) {
-      console.log('Using explicit AWS Access Key credentials for Bedrock');
-      clientConfig.credentials = {
-        accessKeyId: config.accessKeyId,
-        secretAccessKey: config.secretAccessKey,
-      };
-    } else {
-      console.log('Using default AWS credential chain for Bedrock');
-    }
-
-    // Debug logging (safe - doesn't expose secrets)
-    console.log(`Bedrock config: region=${config.region}, model=${this.modelId}, hasApiKey=${!!config.apiKey}, hasCredentials=${!!(config.accessKeyId && config.secretAccessKey)}`);
-
-    try {
-      this.client = new BedrockRuntimeClient(clientConfig);
-      console.log(`Bedrock client initialized for region: ${config.region}, model: ${this.modelId}`);
-    } catch (error) {
-      console.error('Failed to initialize Bedrock client:', error);
-      throw new Error(`Failed to initialize Bedrock client: ${error}`);
-    }
+    console.log(`Azure OpenAI client initialized: endpoint=${this.endpoint}, deployment=${this.deploymentName}`);
   }
 
   /**
@@ -339,7 +311,6 @@ If no Figma links are found, return empty array for figmaLinks with "low" confid
     const response = await this.invokeModel(prompt);
     
     try {
-      // Extract JSON from response
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]);
@@ -714,54 +685,33 @@ Analyze the images carefully and provide your matching results.`;
    * Invoke the model with text-only prompt
    */
   private async invokeModel(prompt: string): Promise<string> {
+    const url = `${this.endpoint}/openai/deployments/${this.deploymentName}/chat/completions?api-version=${this.apiVersion}`;
+
     try {
-      const body = {
-        anthropic_version: this.anthropicVersion,
-        max_tokens: 4096,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
+      const response = await axios.post(
+        url,
+        {
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          max_tokens: 4000,
+          temperature: 0.2,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': this.apiKey,
           },
-        ],
-      };
+        }
+      );
 
-      const command = new InvokeModelCommand({
-        modelId: this.modelId,
-        body: JSON.stringify(body),
-        contentType: 'application/json',
-      });
-
-      const response = await this.client.send(command);
-      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-
-      return responseBody.content?.[0]?.text || '';
+      return response.data.choices?.[0]?.message?.content || '';
     } catch (error: any) {
-      console.error('Bedrock API error:', error);
-
-      // Provide specific error messages for common issues
-      if (error?.name === 'UnrecognizedClientException') {
-        throw new Error(
-          `AWS Bedrock authentication failed: ${error.message}. ` +
-          `Check your BEDROCK_API_KEY or AWS credentials.`
-        );
-      }
-
-      if (error?.name === 'AccessDeniedException') {
-        throw new Error(
-          `AWS Bedrock access denied: ${error.message}. ` +
-          `Check IAM permissions for bedrock:InvokeModel and model access for ${this.modelId}`
-        );
-      }
-
-      if (error?.name === 'ValidationException') {
-        throw new Error(
-          `AWS Bedrock validation error: ${error.message}. ` +
-          `Check model ID and request parameters for ${this.modelId}`
-        );
-      }
-
-      throw new Error(`Bedrock API error: ${error?.message || error}`);
+      console.error('Azure OpenAI API error:', error.response?.data || error.message);
+      throw new Error(`Azure OpenAI API error: ${error.response?.data?.error?.message || error.message}`);
     }
   }
 
@@ -772,16 +722,16 @@ Analyze the images carefully and provide your matching results.`;
     prompt: string,
     images: Array<{ data: string; mediaType: string }>
   ): Promise<string> {
+    const url = `${this.endpoint}/openai/deployments/${this.deploymentName}/chat/completions?api-version=${this.apiVersion}`;
+
     const content: any[] = [];
 
     // Add images first
     for (const image of images) {
       content.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: image.mediaType,
-          data: image.data,
+        type: 'image_url',
+        image_url: {
+          url: `data:${image.mediaType};base64,${image.data}`,
         },
       });
     }
@@ -793,30 +743,30 @@ Analyze the images carefully and provide your matching results.`;
     });
 
     try {
-      const body = {
-        anthropic_version: this.anthropicVersion,
-        max_tokens: 4096,
-        messages: [
-          {
-            role: 'user',
-            content,
+      const response = await axios.post(
+        url,
+        {
+          messages: [
+            {
+              role: 'user',
+              content,
+            },
+          ],
+          max_tokens: 4000,
+          temperature: 0.2,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': this.apiKey,
           },
-        ],
-      };
+        }
+      );
 
-      const command = new InvokeModelCommand({
-        modelId: this.modelId,
-        body: JSON.stringify(body),
-        contentType: 'application/json',
-      });
-
-      const response = await this.client.send(command);
-      const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-
-      return responseBody.content?.[0]?.text || '';
+      return response.data.choices?.[0]?.message?.content || '';
     } catch (error: any) {
-      console.error('Bedrock API error (vision):', error);
-      throw new Error(`Bedrock API error (vision): ${error?.message || error}`);
+      console.error('Azure OpenAI API error (vision):', error.response?.data || error.message);
+      throw new Error(`Azure OpenAI API error (vision): ${error.response?.data?.error?.message || error.message}`);
     }
   }
 }
