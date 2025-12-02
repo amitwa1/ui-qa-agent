@@ -133,7 +133,7 @@ jobs:
           jira-email: ${{ secrets.JIRA_EMAIL }}
           jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
           figma-access-token: ${{ secrets.FIGMA_ACCESS_TOKEN }}
-          figma-mock-mode: 'true'  # Enable mock mode to test without hitting Figma rate limits
+          figma-mock-mode: 'false'  # Disabled - use real Figma API
           # Azure OpenAI Configuration
           azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
           azure-openai-endpoint: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
