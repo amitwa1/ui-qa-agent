@@ -520,7 +520,6 @@ Analyze the images carefully and provide your matching results.`;
                     },
                 ],
                 max_completion_tokens: 4000,
-                temperature: 0.2,
             }, {
                 headers: {
                     'Content-Type': 'application/json',
@@ -563,7 +562,6 @@ Analyze the images carefully and provide your matching results.`;
                     },
                 ],
                 max_completion_tokens: 4000,
-                temperature: 0.2,
             }, {
                 headers: {
                     'Content-Type': 'application/json',
