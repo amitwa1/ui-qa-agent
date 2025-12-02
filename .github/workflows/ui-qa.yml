@@ -61,9 +61,10 @@ jobs:
           jira-email: ${{ secrets.JIRA_EMAIL }}
           jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
           figma-access-token: ${{ secrets.FIGMA_ACCESS_TOKEN }}
-          bedrock-api-key: ${{ secrets.BEDROCK_API_KEY }}
-          bedrock-region: ${{ secrets.BEDROCK_REGION }}
-          bedrock-model-id: ${{ secrets.BEDROCK_MODEL_ID }}
+          # Azure OpenAI Configuration
+          azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          azure-openai-endpoint: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          azure-openai-deployment: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
 
   # Job 2: Request screenshots if Figma links found
   request-screenshots:
@@ -133,9 +134,9 @@ jobs:
           jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
           figma-access-token: ${{ secrets.FIGMA_ACCESS_TOKEN }}
           figma-mock-mode: 'true'  # Enable mock mode to test without hitting Figma rate limits
-          bedrock-api-key: ${{ secrets.BEDROCK_API_KEY }}
-          bedrock-region: ${{ secrets.BEDROCK_REGION }}
-          bedrock-model-id: ${{ secrets.BEDROCK_MODEL_ID }}
+          # Azure OpenAI Configuration
+          azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          azure-openai-endpoint: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          azure-openai-deployment: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
           pr-number: ${{ steps.pr.outputs.number }}
           comment-id: ${{ github.event.comment.id }}
-
