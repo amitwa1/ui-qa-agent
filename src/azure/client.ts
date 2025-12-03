@@ -17,29 +17,16 @@ export interface FigmaLinkExtractionResult {
   context: string;
 }
 
-// Bounding box as percentage of image dimensions (0-100)
-export interface BoundingBox {
-  x: number;      // Left edge as percentage (0-100)
-  y: number;      // Top edge as percentage (0-100)
-  width: number;  // Width as percentage (0-100)
-  height: number; // Height as percentage (0-100)
-}
-
-export interface IssueWithLocation {
-  description: string;
-  bounding_box?: BoundingBox;
-}
-
 // Component analysis types matching ux_validator.py structure
 export interface ComponentIssues {
   missing_component: boolean;
   missing_component_note: string;
-  grammar_issues: (string | IssueWithLocation)[];
-  text_mismatch: (string | IssueWithLocation)[];
-  major_color_differences: (string | IssueWithLocation)[];
+  grammar_issues: string[];
+  text_mismatch: string[];
+  major_color_differences: string[];
   missing_fields: string[];
   field_notes: string;
-  typography_issues: (string | IssueWithLocation)[];
+  typography_issues: string[];
 }
 
 export interface ComponentAnalysis {
@@ -47,7 +34,6 @@ export interface ComponentAnalysis {
   type: string;
   description: string;
   found_in_input: boolean;
-  bounding_box?: BoundingBox;
   issues: ComponentIssues;
   status: 'pass' | 'warning' | 'fail';
 }
@@ -56,7 +42,6 @@ export interface ExtraComponent {
   name: string;
   type: string;
   description: string;
-  bounding_box?: BoundingBox;
   severity: 'minor' | 'major';
 }
 
@@ -69,16 +54,15 @@ export interface BackgroundColorIssue {
 
 export interface GlobalIssues {
   background_color: BackgroundColorIssue;
-  color_issues: (string | IssueWithLocation)[];
-  grammar_issues: (string | IssueWithLocation)[];
-  typography_issues: (string | IssueWithLocation)[];
+  color_issues: string[];
+  grammar_issues: string[];
+  typography_issues: string[];
 }
 
 export interface OverlapIssue {
   element_name: string;
   overlaps_with: string;
   location: string;
-  bounding_box?: BoundingBox;
   severity: 'minor' | 'major';
 }
 
@@ -113,7 +97,6 @@ export interface UIComparisonResult {
     category: 'missing_element' | 'wrong_style' | 'wrong_position' | 'wrong_content' | 'extra_element';
     description: string;
     location: string;
-    boundingBox?: BoundingBox;
   }>;
   summary: string;
   recommendations: string[];
@@ -213,16 +196,6 @@ STEP 4: Check background and overall color scheme differences
 STEP 5: For each component, check grammar, colors, fields, and typography
 STEP 6: Check for overlapping elements
 
-IMPORTANT - BOUNDING BOX COORDINATES:
-For each issue found, you MUST provide a bounding_box with the approximate location in the INPUT (screenshot) image.
-Coordinates are PERCENTAGES (0-100) of the image dimensions:
-- x: left edge percentage (0 = left edge, 100 = right edge)
-- y: top edge percentage (0 = top edge, 100 = bottom edge)  
-- width: width as percentage of image width
-- height: height as percentage of image height
-
-Example: A button in the top-right corner might have: {"x": 75, "y": 5, "width": 20, "height": 8}
-
 Provide your response in the following JSON format:
 {
   "reference_components": [
@@ -231,7 +204,6 @@ Provide your response in the following JSON format:
       "type": "button/header/text/image/icon/marker/panel/etc",
       "description": "Description of component location and purpose in reference",
       "found_in_input": true/false,
-      "bounding_box": {"x": 0, "y": 0, "width": 0, "height": 0},
       "issues": {
         "missing_component": true/false,
         "missing_component_note": "Explanation if component is missing from input",
@@ -250,7 +222,6 @@ Provide your response in the following JSON format:
       "name": "Extra component name found in input but NOT in reference",
       "type": "button/header/text/image/icon/etc",
       "description": "Description of this extra component and its location",
-      "bounding_box": {"x": 0, "y": 0, "width": 0, "height": 0},
       "severity": "minor/major"
     }
   ],
@@ -261,16 +232,15 @@ Provide your response in the following JSON format:
       "input_color": "Color description in input",
       "note": "Description of the difference"
     },
-    "color_issues": [{"description": "Issue description", "bounding_box": {"x": 0, "y": 0, "width": 0, "height": 0}}],
-    "grammar_issues": [{"description": "Issue description", "bounding_box": {"x": 0, "y": 0, "width": 0, "height": 0}}],
-    "typography_issues": [{"description": "Issue description", "bounding_box": {"x": 0, "y": 0, "width": 0, "height": 0}}]
+    "color_issues": ["List of all color-related issues with descriptions"],
+    "grammar_issues": ["List of all grammar/text issues with descriptions"],
+    "typography_issues": ["List of all major typography issues with descriptions"]
   },
   "overlapping_elements": [
     {
       "element_name": "Name/description of overlapping element",
       "overlaps_with": "What it overlaps with",
       "location": "Where the overlap occurs",
-      "bounding_box": {"x": 0, "y": 0, "width": 0, "height": 0},
       "severity": "minor/major"
     }
   ],
@@ -418,11 +388,8 @@ If no Figma links are found, return empty array for figmaLinks with "low" confid
     screenshots: Array<{ url: string; base64: string }>,
     figmaDesigns: Array<{ url: string; base64: string }>
   ): Promise<ScreenshotMatchResult> {
-    console.log(`[Matching] Starting match: ${screenshots.length} screenshot(s) vs ${figmaDesigns.length} Figma design(s)`);
-    
     // If only one of each, just match them directly
     if (screenshots.length === 1 && figmaDesigns.length === 1) {
-      console.log('[Matching] Single screenshot + single design: direct match');
       return {
         matches: [{
           screenshotIndex: 0,
@@ -432,23 +399,6 @@ If no Figma links are found, return empty array for figmaLinks with "low" confid
         }],
         unmatchedScreenshots: [],
         unmatchedFigmaDesigns: [],
-      };
-    }
-
-    // If only one screenshot but multiple designs, match screenshot to ALL designs
-    // (user likely wants to compare their screenshot against all design variants)
-    if (screenshots.length === 1 && figmaDesigns.length > 1) {
-      console.log('[Matching] Single screenshot with multiple designs: matching to first design (index 0)');
-      // Match to first design, leave others unmatched for user to clarify
-      return {
-        matches: [{
-          screenshotIndex: 0,
-          figmaIndex: 0,
-          confidence: 80,
-          reasoning: 'Single screenshot matched to first Figma design. Upload additional screenshots to match other designs.',
-        }],
-        unmatchedScreenshots: [],
-        unmatchedFigmaDesigns: Array.from({ length: figmaDesigns.length - 1 }, (_, i) => i + 1),
       };
     }
 
@@ -467,17 +417,11 @@ If no Figma links are found, return empty array for figmaLinks with "low" confid
     }
 
     try {
-      console.log(`[Matching] Calling AI with ${allImages.length} images...`);
       const response = await this.invokeModelWithImages(prompt, allImages);
-      console.log(`[Matching] AI response received, parsing...`);
-      console.log(`[Matching] Raw response: ${response.substring(0, 500)}...`);
-      const result = this.parseMatchingResponse(response, screenshots.length, figmaDesigns.length);
-      console.log(`[Matching] Parsed result: ${result.matches.length} matches, ${result.unmatchedScreenshots.length} unmatched screenshots, ${result.unmatchedFigmaDesigns.length} unmatched designs`);
-      return result;
+      return this.parseMatchingResponse(response, screenshots.length, figmaDesigns.length);
     } catch (error) {
-      console.error('[Matching] Failed to match screenshots to designs:', error);
+      console.error('Failed to match screenshots to designs:', error);
       // Fallback: match in order
-      console.log('[Matching] Using fallback order-based matching');
       return this.createFallbackMatching(screenshots.length, figmaDesigns.length);
     }
   }
@@ -539,15 +483,7 @@ Analyze the images carefully and provide your matching results.`;
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        console.log(`[Matching] Found JSON in response`);
         const parsed = JSON.parse(jsonMatch[0]);
-        console.log(`[Matching] Parsed JSON: matches=${(parsed.matches || []).length}, unmatchedScreenshots=${(parsed.unmatchedScreenshots || []).length}, unmatchedFigmaDesigns=${(parsed.unmatchedFigmaDesigns || []).length}`);
-        
-        // If AI returned empty matches but we have both screenshots and designs, use fallback
-        if ((!parsed.matches || parsed.matches.length === 0) && screenshotCount > 0 && figmaCount > 0) {
-          console.log(`[Matching] AI returned empty matches - using fallback`);
-          return this.createFallbackMatching(screenshotCount, figmaCount);
-        }
         
         // Validate and sanitize the response
         const matches: ScreenshotDesignMatch[] = [];
@@ -557,7 +493,6 @@ Analyze the images carefully and provide your matching results.`;
         for (const match of parsed.matches || []) {
           const sIdx = Number(match.screenshotIndex);
           const fIdx = Number(match.figmaIndex);
-          console.log(`[Matching] Processing match: screenshot=${sIdx}, figma=${fIdx}`);
           
           // Validate indices and ensure no duplicates
           if (
@@ -577,12 +512,6 @@ Analyze the images carefully and provide your matching results.`;
           }
         }
         
-        // If no valid matches were parsed but we have both screenshots and designs, use fallback
-        if (matches.length === 0 && screenshotCount > 0 && figmaCount > 0) {
-          console.log(`[Matching] No valid matches parsed from AI response - using fallback`);
-          return this.createFallbackMatching(screenshotCount, figmaCount);
-        }
-        
         // Find unmatched items
         const unmatchedScreenshots: number[] = [];
         const unmatchedFigmaDesigns: number[] = [];
@@ -599,16 +528,12 @@ Analyze the images carefully and provide your matching results.`;
           }
         }
         
-        console.log(`[Matching] Final result: ${matches.length} matches, ${unmatchedScreenshots.length} unmatched screenshots, ${unmatchedFigmaDesigns.length} unmatched Figma designs`);
         return { matches, unmatchedScreenshots, unmatchedFigmaDesigns };
-      } else {
-        console.log(`[Matching] No JSON found in AI response`);
       }
     } catch (error) {
-      console.error('[Matching] Failed to parse matching response:', error);
+      console.error('Failed to parse matching response:', error);
     }
     
-    console.log(`[Matching] Using fallback matching`);
     return this.createFallbackMatching(screenshotCount, figmaCount);
   }
 
@@ -643,27 +568,6 @@ Analyze the images carefully and provide your matching results.`;
   }
 
   /**
-   * Helper to extract bounding box from various issue formats
-   */
-  private extractBoundingBox(item: unknown): BoundingBox | undefined {
-    if (typeof item === 'object' && item !== null && 'bounding_box' in item) {
-      const bb = (item as { bounding_box?: BoundingBox }).bounding_box;
-      if (bb && typeof bb.x === 'number' && typeof bb.y === 'number') {
-        return bb;
-      }
-    }
-    return undefined;
-  }
-
-  /**
-   * Helper to get description from string or object with description
-   */
-  private getDescription(item: string | IssueWithLocation): string {
-    if (typeof item === 'string') return item;
-    return item.description;
-  }
-
-  /**
    * Convert detailed UX validation result to legacy format for backwards compatibility
    */
   private convertToLegacyFormat(detailedResult: UXValidationResult): UIComparisonResult {
@@ -677,7 +581,6 @@ Analyze the images carefully and provide your matching results.`;
           category: 'missing_element',
           description: `Missing component: ${comp.name} - ${comp.issues.missing_component_note || comp.description}`,
           location: comp.description,
-          boundingBox: comp.bounding_box,
         });
       }
 
@@ -686,9 +589,8 @@ Analyze the images carefully and provide your matching results.`;
         issues.push({
           severity: 'major',
           category: 'wrong_content',
-          description: this.getDescription(grammarIssue),
+          description: grammarIssue,
           location: comp.name,
-          boundingBox: comp.bounding_box || this.extractBoundingBox(grammarIssue),
         });
       }
 
@@ -697,9 +599,8 @@ Analyze the images carefully and provide your matching results.`;
         issues.push({
           severity: 'major',
           category: 'wrong_style',
-          description: this.getDescription(colorIssue),
+          description: colorIssue,
           location: comp.name,
-          boundingBox: comp.bounding_box || this.extractBoundingBox(colorIssue),
         });
       }
 
@@ -708,9 +609,8 @@ Analyze the images carefully and provide your matching results.`;
         issues.push({
           severity: 'minor',
           category: 'wrong_style',
-          description: this.getDescription(typoIssue),
+          description: typoIssue,
           location: comp.name,
-          boundingBox: comp.bounding_box || this.extractBoundingBox(typoIssue),
         });
       }
 
@@ -721,7 +621,6 @@ Analyze the images carefully and provide your matching results.`;
           category: 'missing_element',
           description: `Missing field: ${field}`,
           location: comp.name,
-          boundingBox: comp.bounding_box,
         });
       }
     }
@@ -733,39 +632,7 @@ Analyze the images carefully and provide your matching results.`;
         category: 'extra_element',
         description: `Extra component not in design: ${extra.name} - ${extra.description}`,
         location: extra.description,
-        boundingBox: extra.bounding_box,
       });
-    }
-
-    // Add global issues with bounding boxes
-    if (detailedResult.global_issues) {
-      for (const colorIssue of detailedResult.global_issues.color_issues || []) {
-        issues.push({
-          severity: 'major',
-          category: 'wrong_style',
-          description: `Color issue: ${this.getDescription(colorIssue)}`,
-          location: 'Global',
-          boundingBox: this.extractBoundingBox(colorIssue),
-        });
-      }
-      for (const grammarIssue of detailedResult.global_issues.grammar_issues || []) {
-        issues.push({
-          severity: 'major',
-          category: 'wrong_content',
-          description: `Grammar issue: ${this.getDescription(grammarIssue)}`,
-          location: 'Global',
-          boundingBox: this.extractBoundingBox(grammarIssue),
-        });
-      }
-      for (const typoIssue of detailedResult.global_issues.typography_issues || []) {
-        issues.push({
-          severity: 'minor',
-          category: 'wrong_style',
-          description: `Typography issue: ${this.getDescription(typoIssue)}`,
-          location: 'Global',
-          boundingBox: this.extractBoundingBox(typoIssue),
-        });
-      }
     }
 
     // Add overlapping elements
@@ -775,7 +642,6 @@ Analyze the images carefully and provide your matching results.`;
         category: 'wrong_position',
         description: `${overlap.element_name} overlaps with ${overlap.overlaps_with}`,
         location: overlap.location,
-        boundingBox: overlap.bounding_box,
       });
     }
 
