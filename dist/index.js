@@ -335,7 +335,8 @@ async function runAnalyzeMode(config) {
                     imageBase64 = figmaClient.getMockImageBase64();
                 }
                 else {
-                    imageBase64 = await (0, image_utils_1.downloadImageAsBase64)(img.imageUrl);
+                    // Use cached download to avoid re-downloading the same image
+                    imageBase64 = await figmaClient.downloadImageAsBase64Cached(img.imageUrl);
                 }
                 figmaImages.push({
                     url: figmaUrl,
@@ -534,5 +535,4 @@ async function run() {
     }
 }
 run();
-//
 //# sourceMappingURL=index.js.map

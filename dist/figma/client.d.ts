@@ -57,6 +57,11 @@ export declare class FigmaClient {
      */
     downloadImage(imageUrl: string): Promise<Buffer>;
     /**
+     * Download image and return as base64, with caching
+     * This caches the actual image data to avoid re-downloading
+     */
+    downloadImageAsBase64Cached(imageUrl: string): Promise<string>;
+    /**
      * Get images for a Figma URL (convenience method)
      * If a specific node is in the URL, gets that node's image
      * Otherwise, gets the first page/frame

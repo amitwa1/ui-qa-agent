@@ -434,7 +434,8 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
           core.info(`🎭 Using mock image for ${img.nodeId}`);
           imageBase64 = figmaClient.getMockImageBase64();
         } else {
-          imageBase64 = await downloadImageAsBase64(img.imageUrl);
+          // Use cached download to avoid re-downloading the same image
+          imageBase64 = await figmaClient.downloadImageAsBase64Cached(img.imageUrl);
         }
         
         figmaImages.push({
@@ -698,4 +699,3 @@ async function run(): Promise<void> {
   }
 }
 run();
-//
