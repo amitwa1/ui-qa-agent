@@ -447,8 +447,11 @@ If no Figma links are found, return empty array for figmaLinks with "low" confid
     screenshots: Array<{ url: string; base64: string }>,
     figmaDesigns: Array<{ url: string; base64: string }>
   ): Promise<ScreenshotMatchResult> {
+    console.log(`[Matching] Starting match: ${screenshots.length} screenshot(s) vs ${figmaDesigns.length} Figma design(s)`);
+    
     // If only one of each, just match them directly
     if (screenshots.length === 1 && figmaDesigns.length === 1) {
+      console.log('[Matching] Single screenshot + single design: direct match');
       return {
         matches: [{
           screenshotIndex: 0,
@@ -458,6 +461,22 @@ If no Figma links are found, return empty array for figmaLinks with "low" confid
         }],
         unmatchedScreenshots: [],
         unmatchedFigmaDesigns: [],
+      };
+    }
+
+    // If only one screenshot but multiple designs, match screenshot to first design
+    // (user likely wants to compare their screenshot against the first design variant)
+    if (screenshots.length === 1 && figmaDesigns.length > 1) {
+      console.log('[Matching] Single screenshot with multiple designs: matching to first design (index 0)');
+      return {
+        matches: [{
+          screenshotIndex: 0,
+          figmaIndex: 0,
+          confidence: 80,
+          reasoning: 'Single screenshot matched to first Figma design. Upload additional screenshots to match other designs.',
+        }],
+        unmatchedScreenshots: [],
+        unmatchedFigmaDesigns: Array.from({ length: figmaDesigns.length - 1 }, (_, i) => i + 1),
       };
     }
 
@@ -476,11 +495,16 @@ If no Figma links are found, return empty array for figmaLinks with "low" confid
     }
 
     try {
+      console.log(`[Matching] Calling AI with ${allImages.length} images...`);
       const response = await this.invokeModelWithImages(prompt, allImages);
-      return this.parseMatchingResponse(response, screenshots.length, figmaDesigns.length);
+      console.log(`[Matching] AI response received, parsing...`);
+      const result = this.parseMatchingResponse(response, screenshots.length, figmaDesigns.length);
+      console.log(`[Matching] Parsed result: ${result.matches.length} matches, ${result.unmatchedScreenshots.length} unmatched screenshots, ${result.unmatchedFigmaDesigns.length} unmatched designs`);
+      return result;
     } catch (error) {
-      console.error('Failed to match screenshots to designs:', error);
+      console.error('[Matching] Failed to match screenshots to designs:', error);
       // Fallback: match in order
+      console.log('[Matching] Using fallback order-based matching');
       return this.createFallbackMatching(screenshots.length, figmaDesigns.length);
     }
   }
@@ -542,7 +566,15 @@ Analyze the images carefully and provide your matching results.`;
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
+        console.log(`[Matching] Found JSON in response`);
         const parsed = JSON.parse(jsonMatch[0]);
+        console.log(`[Matching] Parsed JSON: matches=${(parsed.matches || []).length}`);
+        
+        // If AI returned empty matches but we have both screenshots and designs, use fallback
+        if ((!parsed.matches || parsed.matches.length === 0) && screenshotCount > 0 && figmaCount > 0) {
+          console.log(`[Matching] AI returned empty matches - using fallback`);
+          return this.createFallbackMatching(screenshotCount, figmaCount);
+        }
         
         // Validate and sanitize the response
         const matches: ScreenshotDesignMatch[] = [];
@@ -552,6 +584,7 @@ Analyze the images carefully and provide your matching results.`;
         for (const match of parsed.matches || []) {
           const sIdx = Number(match.screenshotIndex);
           const fIdx = Number(match.figmaIndex);
+          console.log(`[Matching] Processing match: screenshot=${sIdx}, figma=${fIdx}`);
           
           // Validate indices and ensure no duplicates
           if (
@@ -571,6 +604,12 @@ Analyze the images carefully and provide your matching results.`;
           }
         }
         
+        // If no valid matches were parsed but we have both screenshots and designs, use fallback
+        if (matches.length === 0 && screenshotCount > 0 && figmaCount > 0) {
+          console.log(`[Matching] No valid matches parsed from AI response - using fallback`);
+          return this.createFallbackMatching(screenshotCount, figmaCount);
+        }
+        
         // Find unmatched items
         const unmatchedScreenshots: number[] = [];
         const unmatchedFigmaDesigns: number[] = [];
@@ -587,12 +626,16 @@ Analyze the images carefully and provide your matching results.`;
           }
         }
         
+        console.log(`[Matching] Final result: ${matches.length} matches, ${unmatchedScreenshots.length} unmatched screenshots, ${unmatchedFigmaDesigns.length} unmatched Figma designs`);
         return { matches, unmatchedScreenshots, unmatchedFigmaDesigns };
+      } else {
+        console.log(`[Matching] No JSON found in AI response`);
       }
     } catch (error) {
-      console.error('Failed to parse matching response:', error);
+      console.error('[Matching] Failed to parse matching response:', error);
     }
     
+    console.log(`[Matching] Using fallback matching`);
     return this.createFallbackMatching(screenshotCount, figmaCount);
   }
 

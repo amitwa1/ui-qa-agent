@@ -470,6 +470,11 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
 
   // Use AI to intelligently match screenshots to Figma designs
   core.info('🔍 Using AI to match screenshots to Figma designs...');
+  core.info(`   Screenshots count: ${screenshots.length}`);
+  core.info(`   Figma designs count: ${figmaDesigns.length}`);
+  for (let i = 0; i < figmaDesigns.length; i++) {
+    core.info(`   Figma design ${i}: ${figmaDesigns[i].url}`);
+  }
   const matchResult = await aiClient.matchScreenshotsToDesigns(screenshots, figmaDesigns);
   
   core.info(`AI Matching Results:`);
