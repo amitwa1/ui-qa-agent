@@ -41,6 +41,7 @@ const client_3 = require("./bedrock/client");
 const client_4 = require("./azure/client");
 const pr_handler_1 = require("./github/pr-handler");
 const image_utils_1 = require("./utils/image-utils");
+const image_annotator_1 = require("./utils/image-annotator");
 function getConfig() {
     const mode = core.getInput('mode', { required: true });
     const figmaMockInput = core.getInput('figma-mock-mode');
@@ -386,12 +387,30 @@ async function runAnalyzeMode(config) {
         const figmaDesign = figmaDesigns[match.figmaIndex];
         core.info(`Comparing screenshot ${match.screenshotIndex} against Figma design ${match.figmaIndex}...`);
         const comparisonResult = await aiClient.compareUIScreenshot(figmaDesign.base64, screenshot.base64, `Comparing implementation screenshot against Figma design from ${figmaDesign.url}`);
+        // Generate annotated image with issue markers
+        let annotatedImage;
+        if (comparisonResult.issues && comparisonResult.issues.length > 0) {
+            try {
+                core.info(`Generating annotated image with ${comparisonResult.issues.length} issue marker(s)...`);
+                annotatedImage = await (0, image_annotator_1.createAnnotatedImage)(screenshot.base64, comparisonResult.issues);
+                if (annotatedImage.hasAnnotations) {
+                    core.info(`✅ Created annotated image with ${annotatedImage.legend.length} markers`);
+                }
+                else {
+                    core.info(`ℹ️ No issues with bounding boxes - skipping annotation`);
+                }
+            }
+            catch (error) {
+                core.warning(`Failed to create annotated image: ${error}`);
+            }
+        }
         results.push({
             figmaUrl: figmaDesign.url,
             screenshotUrl: screenshot.url,
             ...comparisonResult,
             matchConfidence: match.confidence,
             matchReasoning: match.reasoning,
+            annotatedImage,
         });
     }
     // Add warnings for unmatched items

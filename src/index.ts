@@ -6,6 +6,7 @@ import { BedrockClient, UIComparisonResult } from './bedrock/client';
 import { AzureOpenAIClient } from './azure/client';
 import { PRHandler } from './github/pr-handler';
 import { downloadImageAsBase64 } from './utils/image-utils';
+import { createAnnotatedImage, AnnotationResult } from './utils/image-annotator';
 
 type ActionMode = 'detect' | 'request' | 'analyze';
 type AIProvider = 'bedrock' | 'azure';
@@ -497,6 +498,7 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
     detailedResult?: UIComparisonResult['detailedResult'];
     matchConfidence?: number;
     matchReasoning?: string;
+    annotatedImage?: AnnotationResult;
   }> = [];
 
   for (const match of matchResult.matches) {
@@ -511,12 +513,29 @@ async function runAnalyzeMode(config: ActionConfig): Promise<void> {
       `Comparing implementation screenshot against Figma design from ${figmaDesign.url}`
     );
 
+    // Generate annotated image with issue markers
+    let annotatedImage: AnnotationResult | undefined;
+    if (comparisonResult.issues && comparisonResult.issues.length > 0) {
+      try {
+        core.info(`Generating annotated image with ${comparisonResult.issues.length} issue marker(s)...`);
+        annotatedImage = await createAnnotatedImage(screenshot.base64, comparisonResult.issues);
+        if (annotatedImage.hasAnnotations) {
+          core.info(`✅ Created annotated image with ${annotatedImage.legend.length} markers`);
+        } else {
+          core.info(`ℹ️ No issues with bounding boxes - skipping annotation`);
+        }
+      } catch (error) {
+        core.warning(`Failed to create annotated image: ${error}`);
+      }
+    }
+
     results.push({
       figmaUrl: figmaDesign.url,
       screenshotUrl: screenshot.url,
       ...comparisonResult,
       matchConfidence: match.confidence,
       matchReasoning: match.reasoning,
+      annotatedImage,
     });
   }
 

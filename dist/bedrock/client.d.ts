@@ -14,21 +14,32 @@ export interface FigmaLinkExtractionResult {
     confidence: 'high' | 'medium' | 'low';
     context: string;
 }
+export interface BoundingBox {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+export interface IssueWithLocation {
+    description: string;
+    bounding_box?: BoundingBox;
+}
 export interface ComponentIssues {
     missing_component: boolean;
     missing_component_note: string;
-    grammar_issues: string[];
-    text_mismatch: string[];
-    major_color_differences: string[];
+    grammar_issues: (string | IssueWithLocation)[];
+    text_mismatch: (string | IssueWithLocation)[];
+    major_color_differences: (string | IssueWithLocation)[];
     missing_fields: string[];
     field_notes: string;
-    typography_issues: string[];
+    typography_issues: (string | IssueWithLocation)[];
 }
 export interface ComponentAnalysis {
     name: string;
     type: string;
     description: string;
     found_in_input: boolean;
+    bounding_box?: BoundingBox;
     issues: ComponentIssues;
     status: 'pass' | 'warning' | 'fail';
 }
@@ -36,6 +47,7 @@ export interface ExtraComponent {
     name: string;
     type: string;
     description: string;
+    bounding_box?: BoundingBox;
     severity: 'minor' | 'major';
 }
 export interface BackgroundColorIssue {
@@ -46,14 +58,15 @@ export interface BackgroundColorIssue {
 }
 export interface GlobalIssues {
     background_color: BackgroundColorIssue;
-    color_issues: string[];
-    grammar_issues: string[];
-    typography_issues: string[];
+    color_issues: (string | IssueWithLocation)[];
+    grammar_issues: (string | IssueWithLocation)[];
+    typography_issues: (string | IssueWithLocation)[];
 }
 export interface OverlapIssue {
     element_name: string;
     overlaps_with: string;
     location: string;
+    bounding_box?: BoundingBox;
     severity: 'minor' | 'major';
 }
 export interface ValidationSummary {
@@ -81,6 +94,7 @@ export interface UIComparisonIssue {
     category: 'missing_element' | 'wrong_style' | 'wrong_position' | 'wrong_content' | 'extra_element';
     description: string;
     location: string;
+    boundingBox?: BoundingBox;
 }
 export interface UIComparisonResult {
     overallMatch: 'pass' | 'fail' | 'warning';
@@ -141,6 +155,14 @@ export declare class BedrockClient {
      * Create fallback matching (match in order)
      */
     private createFallbackMatching;
+    /**
+     * Helper to extract bounding box from various issue formats
+     */
+    private extractBoundingBox;
+    /**
+     * Helper to get description from string or object with description
+     */
+    private getDescription;
     /**
      * Convert detailed UX validation result to legacy format for backwards compatibility
      */

@@ -1,8 +1,20 @@
 import * as github from '@actions/github';
 import axios from 'axios';
-import { UXValidationResult } from '../bedrock/client';
+import { UXValidationResult, BoundingBox } from '../bedrock/client';
 
 type Octokit = ReturnType<typeof github.getOctokit>;
+
+// Annotation result from image annotator
+export interface AnnotationResult {
+  annotatedImageBase64: string;
+  legend: Array<{
+    number: number;
+    severity: 'critical' | 'major' | 'minor';
+    description: string;
+    location: string;
+  }>;
+  hasAnnotations: boolean;
+}
 
 export interface PRInfo {
   owner: string;
@@ -220,9 +232,11 @@ ${figmaListItems}
         category: string;
         description: string;
         location: string;
+        boundingBox?: BoundingBox;
       }>;
       recommendations: string[];
       detailedResult?: UXValidationResult;
+      annotatedImage?: AnnotationResult;
     }>
   ): Promise<number> {
     const statusEmoji = {
@@ -268,6 +282,25 @@ ${figmaListItems}
       body += `<summary>${emoji} Comparison ${i + 1}: ${result.matchPercentage}% match</summary>\n\n`;
       body += `**Figma Design:** ${result.figmaUrl}\n\n`;
       body += `**Summary:** ${result.summary}\n\n`;
+
+      // Display annotated image with issue markers if available
+      if (result.annotatedImage?.hasAnnotations) {
+        body += `### 🖼️ Annotated Screenshot\n\n`;
+        body += `The screenshot below has numbered markers indicating the location of each issue:\n\n`;
+        body += `![Annotated Screenshot](data:image/png;base64,${result.annotatedImage.annotatedImageBase64})\n\n`;
+        
+        // Add legend with numbered issues
+        body += `### 📍 Issue Legend\n\n`;
+        body += `| # | Severity | Issue | Location |\n`;
+        body += `|---|----------|-------|----------|\n`;
+        for (const item of result.annotatedImage.legend) {
+          const sevEmoji = item.severity === 'critical' ? '🔴' : item.severity === 'major' ? '🟠' : '🟡';
+          // Truncate long descriptions
+          const desc = item.description.length > 80 ? item.description.substring(0, 77) + '...' : item.description;
+          body += `| **${item.number}** | ${sevEmoji} ${item.severity} | ${desc} | ${item.location} |\n`;
+        }
+        body += `\n`;
+      }
 
       // If we have detailed results, show the structured analysis
       if (detailed) {

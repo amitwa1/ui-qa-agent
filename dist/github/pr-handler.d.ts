@@ -1,4 +1,14 @@
-import { UXValidationResult } from '../bedrock/client';
+import { UXValidationResult, BoundingBox } from '../bedrock/client';
+export interface AnnotationResult {
+    annotatedImageBase64: string;
+    legend: Array<{
+        number: number;
+        severity: 'critical' | 'major' | 'minor';
+        description: string;
+        location: string;
+    }>;
+    hasAnnotations: boolean;
+}
 export interface PRInfo {
     owner: string;
     repo: string;
@@ -77,9 +87,11 @@ export declare class PRHandler {
             category: string;
             description: string;
             location: string;
+            boundingBox?: BoundingBox;
         }>;
         recommendations: string[];
         detailedResult?: UXValidationResult;
+        annotatedImage?: AnnotationResult;
     }>): Promise<number>;
     /**
      * Download an image from a URL and return as base64

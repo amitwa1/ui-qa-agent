@@ -21,7 +21,8 @@
     "@actions/core": "^1.10.1",
     "@actions/github": "^6.0.0",
     "@aws-sdk/client-bedrock-runtime": "^3.941.0",
-    "axios": "^1.6.2"
+    "axios": "^1.6.2",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
